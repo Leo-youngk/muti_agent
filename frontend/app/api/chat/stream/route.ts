@@ -306,21 +306,44 @@ export async function POST(request: Request) {
           return
         }
 
-        // ── 全团模式（并行调用，按完成顺序推送）──────────────────────────
+        // ── 全团模式（并行调用 + 交叉分析不等最慢顾问）──────────────────
         const completedJudgments: Partial<Record<AdvisorId, AdvisorJudgment>> = {}
+        let doneCount = 0
+        const total = ADVISORS.length
+        // 3/4 完成后启动倒计时：再等最多 8s，超时就用已有结果开始分析
+        const FAST_THRESHOLD = Math.max(1, total - 1)  // 3
+        const STRAGGLER_TIMEOUT = 8_000
+
+        let analysisResolve: (() => void) | null = null
+        const analysisGate = new Promise<void>(r => { analysisResolve = r })
 
         // 并行发起所有顾问调用
         const advisorPromises = ADVISORS.map(async (advisor) => {
           const judgment = await runAdvisor(advisor)
           if (judgment) completedJudgments[advisor.id as AdvisorId] = judgment
+          doneCount++
+
+          // 全部完成 → 立即开始分析
+          if (doneCount >= total) {
+            analysisResolve?.()
+          }
+          // 倒数第二个完成 → 给最后一个限时
+          else if (doneCount >= FAST_THRESHOLD) {
+            setTimeout(() => analysisResolve?.(), STRAGGLER_TIMEOUT)
+          }
+
           return { advisorId: advisor.id as AdvisorId, judgment }
         })
 
-        // 等待所有完成（每个完成时前端已收到 advisor_complete 事件）
-        await Promise.all(advisorPromises)
+        // 等待分析门打开（全部完成 or 3/4完成+8s超时）
+        await analysisGate
 
-        // ── 交叉分析 ──────────────────────────────────────────────────────
-        await runCrossAnalysis(completedJudgments)
+        // ── 交叉分析（可能有 1 个顾问还在跑，但不等了）─────────────────
+        // 分析和最后一个顾问并行执行
+        const analysisPromise = runCrossAnalysis(completedJudgments)
+
+        // 等分析完 + 所有顾问完（如果最后一个还在跑，前端已经收到分析结果了）
+        await Promise.all([analysisPromise, ...advisorPromises])
 
         send({ event: 'complete' })
       } catch (err: unknown) {

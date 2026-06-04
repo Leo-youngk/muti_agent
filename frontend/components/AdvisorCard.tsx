@@ -1,12 +1,13 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { AdvisorJudgment, AdvisorStatus } from '@/lib/types'
 import { ADVISOR_MAP } from '@/lib/advisors'
 import type { AdvisorId } from '@/lib/types'
 import { useCopy } from '@/lib/hooks'
+import { extractStreamingFields } from '@/lib/parseStreaming'
 
 interface Props {
   advisorId: AdvisorId
@@ -29,7 +30,19 @@ export default function AdvisorCard({ advisorId, status, judgment, streamingText
   const [expanded, setExpanded] = useState(false)
   const { copied, copy } = useCopy()
   const meta = ADVISOR_MAP[advisorId]
-  const stance = judgment ? (STANCE_STYLE[judgment.stance] ?? STANCE_STYLE['需要更多信息']) : null
+
+  // ── 流式阶段：实时提取已完成的字段 ──
+  const streamFields = useMemo(() => {
+    if (status !== 'thinking' || !streamingText || streamingText.length < 20) return null
+    return extractStreamingFields(streamingText)
+  }, [status, streamingText])
+
+  // 用最终 judgment（如果已完成）或流式提取的部分字段
+  const displayData = judgment ?? streamFields
+  const stance = displayData?.stance
+    ? (STANCE_STYLE[displayData.stance] ?? STANCE_STYLE['需要更多信息'])
+    : null
+  const isStreaming = status === 'thinking' && !!streamFields
 
   const getJudgmentText = () => {
     if (!judgment) return ''
@@ -51,9 +64,13 @@ export default function AdvisorCard({ advisorId, status, judgment, streamingText
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2.5">
             <span className="text-lg font-bold" style={{ color: meta.color }}>{meta.icon}</span>
-            <div>
+            <div className="flex items-center gap-2">
               <span className="text-sm font-semibold text-[#0D0D0D]">{meta.name}</span>
-              <span className="ml-2 text-xs text-[#999] hidden sm:inline">{meta.nameEn}</span>
+              <span className="text-xs text-[#999] hidden sm:inline">{meta.nameEn}</span>
+              {/* 流式指示器 */}
+              {isStreaming && (
+                <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: meta.color }} />
+              )}
             </div>
           </div>
           <div className="flex items-center gap-1.5">
@@ -89,72 +106,88 @@ export default function AdvisorCard({ advisorId, status, judgment, streamingText
       {/* Content */}
       <div className="px-4 sm:px-5 pb-4">
 
-        {/* ── 思考中 ── */}
-        {status === 'thinking' && (
-          <div>
-            {streamingText ? (
-              <StreamingBlock text={streamingText} color={meta.color} />
-            ) : (
-              <div className="flex items-center gap-2 py-2">
-                <div className="flex gap-1">
-                  {[0, 150, 300].map(d => (
-                    <span
-                      key={d}
-                      className="w-1.5 h-1.5 rounded-full animate-bounce"
-                      style={{ background: meta.color, animationDelay: `${d}ms` }}
-                    />
-                  ))}
-                </div>
-                <span className="text-xs text-[#999]">正在思考…</span>
-              </div>
-            )}
+        {/* ── 思考中但还没有任何字段：纯等待动画 ── */}
+        {status === 'thinking' && !streamFields && (
+          <div className="flex items-center gap-2 py-2">
+            <div className="flex gap-1">
+              {[0, 150, 300].map(d => (
+                <span
+                  key={d}
+                  className="w-1.5 h-1.5 rounded-full animate-bounce"
+                  style={{ background: meta.color, animationDelay: `${d}ms` }}
+                />
+              ))}
+            </div>
+            <span className="text-xs text-[#999]">正在思考…</span>
           </div>
         )}
 
-        {/* ── 完成 ── */}
-        {(status === 'done' || status === 'error') && judgment && (
+        {/* ── 渐进渲染：流式字段 or 完成后的完整判断 ── */}
+        {displayData && (status === 'thinking' || status === 'done' || status === 'error') && (
           <div className="space-y-3">
-            <p className="text-[15px] font-medium text-[#0D0D0D] leading-relaxed">
-              <Md>{judgment.core_judgment}</Md>
-            </p>
-
-            <div className="text-sm text-[#444] leading-relaxed">
-              <Md>{judgment.reasoning}</Md>
-            </div>
-
-            <div
-              className="rounded-xl px-4 py-3"
-              style={{ background: `${meta.color}0D`, borderLeft: `3px solid ${meta.color}` }}
-            >
-              <p className="text-[10px] font-semibold uppercase tracking-widest mb-1.5" style={{ color: meta.color }}>
-                核心批评
+            {/* 核心判断 */}
+            {displayData.core_judgment && (
+              <p className="text-[15px] font-medium text-[#0D0D0D] leading-relaxed">
+                <Md>{displayData.core_judgment}</Md>
               </p>
-              <div className="text-sm text-[#0D0D0D] leading-relaxed">
-                <Md>{judgment.criticism}</Md>
-              </div>
-            </div>
+            )}
 
-            {!expanded ? (
-              <button
-                onClick={() => setExpanded(true)}
-                className="text-xs font-medium transition-colors"
-                style={{ color: meta.color }}
-              >
-                展开完整判断 ▾
-              </button>
-            ) : (
-              <div className="space-y-3 pt-1">
-                <DetailRow label="关注焦点" value={judgment.focus} />
-                <DetailRow label="要求改变" value={judgment.demand} />
-                <DetailRow label="如何切入" value={judgment.approach} />
-                <DetailRow label="他的盲点" value={judgment.blind_spot} color="#999" italic />
-                <button
-                  onClick={() => setExpanded(false)}
-                  className="text-xs font-medium text-[#BBB]"
-                >
-                  收起 ▴
-                </button>
+            {/* 推理 */}
+            {displayData.reasoning && (
+              <div className="text-sm text-[#444] leading-relaxed">
+                <Md>{displayData.reasoning}</Md>
               </div>
+            )}
+
+            {/* 批评 */}
+            {displayData.criticism && (
+              <div
+                className="rounded-xl px-4 py-3"
+                style={{ background: `${meta.color}0D`, borderLeft: `3px solid ${meta.color}` }}
+              >
+                <p className="text-[10px] font-semibold uppercase tracking-widest mb-1.5" style={{ color: meta.color }}>
+                  核心批评
+                </p>
+                <div className="text-sm text-[#0D0D0D] leading-relaxed">
+                  <Md>{displayData.criticism}</Md>
+                </div>
+              </div>
+            )}
+
+            {/* 流式阶段：显示"正在生成剩余字段" */}
+            {isStreaming && !displayData.blind_spot && (
+              <div className="flex items-center gap-1.5 text-xs text-[#BBB]">
+                <span className="w-1 h-1 rounded-full animate-pulse" style={{ background: meta.color }} />
+                正在生成…
+              </div>
+            )}
+
+            {/* 展开/收起（仅完成状态） */}
+            {!isStreaming && (displayData.focus || displayData.demand || displayData.approach || displayData.blind_spot) && (
+              <>
+                {!expanded ? (
+                  <button
+                    onClick={() => setExpanded(true)}
+                    className="text-xs font-medium transition-colors"
+                    style={{ color: meta.color }}
+                  >
+                    展开完整判断 ▾
+                  </button>
+                ) : (
+                  <div className="space-y-3 pt-1">
+                    {displayData.focus && <DetailRow label="关注焦点" value={displayData.focus} />}
+                    {displayData.demand && <DetailRow label="要求改变" value={displayData.demand} />}
+                    {displayData.approach && <DetailRow label="如何切入" value={displayData.approach} />}
+                    {displayData.blind_spot && <DetailRow label="他的盲点" value={displayData.blind_spot} color="#999" italic />}
+                    <button
+                      onClick={() => setExpanded(false)}
+                      className="text-xs font-medium text-[#BBB]"
+                    >
+                      收起 ▴
+                    </button>
+                  </div>
+                )}
+              </>
             )}
 
             {/* 追问按钮 */}
@@ -173,7 +206,7 @@ export default function AdvisorCard({ advisorId, status, judgment, streamingText
           </div>
         )}
 
-        {/* ── 错误且无 judgment：显示重试按钮 ── */}
+        {/* ── 错误且无 judgment ── */}
         {status === 'error' && !judgment && (
           <div className="flex items-center gap-3 py-2">
             <p className="text-sm text-[#DC2626]">判断获取失败</p>
@@ -196,34 +229,7 @@ export default function AdvisorCard({ advisorId, status, judgment, streamingText
   )
 }
 
-// ── 流式文本展示块 ────────────────────────────────────────────────────────────
-
-function StreamingBlock({ text, color }: { text: string; color: string }) {
-  const visible = text.length > 400 ? '…' + text.slice(-400) : text
-
-  return (
-    <div
-      className="rounded-xl overflow-hidden"
-      style={{ background: `${color}08`, border: `1px solid ${color}22` }}
-    >
-      <div
-        className="px-3 py-1.5 flex items-center gap-1.5"
-        style={{ background: `${color}10`, borderBottom: `1px solid ${color}22` }}
-      >
-        <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: color }} />
-        <span className="text-[10px] font-semibold uppercase tracking-widest" style={{ color }}>
-          生成中
-        </span>
-      </div>
-      <pre
-        className="px-3 py-2.5 text-[11px] text-[#555] font-mono leading-relaxed whitespace-pre-wrap break-words"
-        style={{ maxHeight: '9rem', overflow: 'hidden' }}
-      >
-        {visible}
-      </pre>
-    </div>
-  )
-}
+// ── 子组件 ────────────────────────────────────────────────────────────────────
 
 function DetailRow({ label, value, color, italic }: {
   label: string; value: string; color?: string; italic?: boolean
