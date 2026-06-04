@@ -1,26 +1,80 @@
-import type { Thread, AppSettings, AdvisorId } from './types'
+import { get, set } from 'idb-keyval'
+import type { Thread, AppSettings, PanelResult } from './types'
 
-const THREADS_KEY = 'advisor_threads_v2'
+const THREADS_KEY = 'advisor_threads_v3'
 const SETTINGS_KEY = 'advisor_settings_v2'
+
+// ─── IndexedDB 存储（容量远大于 localStorage 的 5MB）─────────────────────────
 
 function safe<T>(fn: () => T, fallback: T): T {
   try { return fn() } catch { return fallback }
 }
 
+/** 存入 localStorage 前清除 streaming 冗余数据，减少存储体积 */
+function stripStreamingData(threads: Thread[]): Thread[] {
+  return threads.map(t => ({
+    ...t,
+    messages: t.messages.map(m => {
+      if (!m.panel) return m
+      const cleaned: PanelResult = {
+        ...m.panel,
+        streamingTexts: {},   // 不保存原始 token 流
+        analysisStream: '',   // 不保存分析的原始流
+      }
+      return { ...m, panel: cleaned }
+    }),
+  }))
+}
+
 // ─── Threads ──────────────────────────────────────────────────────────────────
 
-export function loadThreads(): Thread[] {
+/** 从 IndexedDB 加载，自动兼容旧 localStorage 数据 */
+export async function loadThreads(): Promise<Thread[]> {
+  try {
+    // 先尝试 IndexedDB
+    const data = await get<Thread[]>(THREADS_KEY)
+    if (data && data.length > 0) return data
+
+    // 回退：从旧 localStorage 迁移
+    const raw = localStorage.getItem('advisor_threads_v2')
+    if (raw) {
+      const threads = JSON.parse(raw) as Thread[]
+      if (threads.length > 0) {
+        await set(THREADS_KEY, stripStreamingData(threads))
+        localStorage.removeItem('advisor_threads_v2')   // 迁移完成，清理旧数据
+        return threads
+      }
+    }
+    return []
+  } catch {
+    // IndexedDB 不可用时回退到 localStorage
+    return safe(() => {
+      const raw = localStorage.getItem('advisor_threads_v2') || localStorage.getItem(THREADS_KEY)
+      return raw ? (JSON.parse(raw) as Thread[]) : []
+    }, [])
+  }
+}
+
+export async function saveThreads(threads: Thread[]): Promise<void> {
+  const cleaned = stripStreamingData(threads)
+  try {
+    await set(THREADS_KEY, cleaned)
+  } catch {
+    // 回退到 localStorage
+    safe(() => localStorage.setItem(THREADS_KEY, JSON.stringify(cleaned)), undefined)
+  }
+}
+
+// ─── 同步版本（仅用于初始化，避免异步阻塞渲染）────────────────────────────────
+
+export function loadThreadsSync(): Thread[] {
   return safe(() => {
-    const raw = localStorage.getItem(THREADS_KEY)
+    const raw = localStorage.getItem('advisor_threads_v2') || localStorage.getItem(THREADS_KEY)
     return raw ? (JSON.parse(raw) as Thread[]) : []
   }, [])
 }
 
-export function saveThreads(threads: Thread[]): void {
-  safe(() => localStorage.setItem(THREADS_KEY, JSON.stringify(threads)), undefined)
-}
-
-// ─── Settings ─────────────────────────────────────────────────────────────────
+// ─── Settings（体积小，继续用 localStorage 同步读写）─────────────────────────────
 
 export const DEFAULT_SETTINGS: AppSettings = {
   apiKey: '',
@@ -52,13 +106,12 @@ export function threadToMarkdown(thread: Thread): string {
 
   for (const msg of thread.messages) {
     if (msg.role === 'user') {
-      lines.push('## 💬 问题')
+      lines.push('## 问题')
       lines.push('')
       lines.push(msg.content)
       lines.push('')
     } else if (msg.role === 'panel' && msg.panel) {
       const { judgments, analysis } = msg.panel
-      const followUpMeta = msg.followUpMeta
 
       for (const [, j] of Object.entries(judgments)) {
         if (!j) continue
@@ -78,7 +131,7 @@ export function threadToMarkdown(thread: Thread): string {
       }
 
       if (analysis) {
-        lines.push('### 🎯 主持人综合')
+        lines.push('### 主持人综合')
         lines.push('')
         if (analysis.disputes?.length > 0) {
           lines.push('**核心分歧**')

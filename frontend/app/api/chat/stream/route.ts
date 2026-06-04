@@ -103,23 +103,18 @@ function parseJSON<T>(text: string): T | null {
   return null
 }
 
-/**
- * 当 JSON 无法完整解析时（超时截断 / 格式错误），
- * 用正则从已有文本里抢救出关键字段，至少保留核心判断。
- */
 function extractPartialAdvisorJudgment(
   text: string,
   fallbackName: string
 ): AdvisorJudgment | null {
   const get = (key: string): string => {
-    // 匹配 "key": "value"，value 允许内部有转义字符
     const m = text.match(new RegExp(`"${key}"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)`))
     if (!m) return ''
     return m[1].replace(/\\n/g, '\n').replace(/\\"/g, '"').replace(/\\t/g, ' ')
   }
 
   const core = get('core_judgment')
-  if (!core) return null   // 连核心判断都没有，真的没办法了
+  if (!core) return null
 
   const rawStance = get('stance')
   const validStances = ['支持', '反对', '有条件支持', '需要更多信息'] as const
@@ -149,18 +144,16 @@ export async function POST(request: Request) {
     task?: string
     history?: HistoryMessage[]
     model?: string
-    /** 用户在前端设置的 API Key（优先于环境变量）*/
     clientApiKey?: string
-    /** 用户在前端设置的 Base URL（优先于环境变量）*/
     clientBaseUrl?: string
-    /** 用户自定义的顾问档案 */
     customProfiles?: Partial<Record<AdvisorId, string>>
     targetAdvisor?: AdvisorId
     previousJudgments?: PreviousJudgment[]
+    /** 追问后是否也触发交叉分析 */
+    followUpAnalysis?: boolean
   }
   try { body = await request.json() } catch { body = {} }
 
-  // API Key: 前端配置 > 环境变量
   const apiKey = body.clientApiKey?.trim() || process.env.OPENAI_API_KEY?.trim()
   if (!apiKey) return Response.json({ error: 'API Key 未配置。请在设置中填写或配置环境变量 OPENAI_API_KEY。' }, { status: 400 })
 
@@ -181,15 +174,25 @@ export async function POST(request: Request) {
   const targetAdvisor = body.targetAdvisor ?? null
   const previousJudgments: PreviousJudgment[] = body.previousJudgments ?? []
   const customProfiles: Partial<Record<AdvisorId, string>> = body.customProfiles ?? {}
+  const followUpAnalysis = body.followUpAnalysis ?? false
 
   const client = new OpenAI({ apiKey, baseURL })
   const encoder = new TextEncoder()
 
   const responseStream = new ReadableStream({
     async start(controller) {
+      let closed = false
+
       function send(data: object) {
+        if (closed) return
         try { controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`)) } catch {}
       }
+
+      // ── SSE 心跳：每 15s 发送注释行防止中间层断连 ──
+      const heartbeat = setInterval(() => {
+        if (closed) return
+        try { controller.enqueue(encoder.encode(': keepalive\n\n')) } catch {}
+      }, 15_000)
 
       async function runAdvisor(
         advisor: typeof ADVISORS[0],
@@ -204,7 +207,6 @@ export async function POST(request: Request) {
         for (let attempt = 0; attempt <= 2; attempt++) {
           if (attempt > 0) await sleep(600 * attempt)
 
-          // 每次调用独立的 30s 超时，防止单个顾问卡住拖垮全局
           const perCallAbort = new AbortController()
           const timeoutId = setTimeout(() => perCallAbort.abort('per-advisor-timeout'), 30_000)
           let accumulated = ''
@@ -238,17 +240,48 @@ export async function POST(request: Request) {
             const isLastAttempt = attempt === 2
 
             if (isTimeout || isLastAttempt) {
-              // 超时时尝试用已累积文本救出部分内容
               const salvaged = parseJSON<AdvisorJudgment>(accumulated)
                 ?? extractPartialAdvisorJudgment(accumulated, advisor.name)
               send({ event: 'advisor_complete', advisorId, judgment: salvaged,
                 error: isTimeout ? `超时（已累积 ${accumulated.length} 字符）` : String(err) })
               return salvaged
             }
-            // 还有重试机会，继续
           }
         }
         return null
+      }
+
+      async function runCrossAnalysis(
+        completedJudgments: Partial<Record<AdvisorId, AdvisorJudgment>>
+      ) {
+        const validEntries = Object.entries(completedJudgments).filter(([, j]) => j != null)
+        if (validEntries.length === 0) return
+
+        const judgmentsText = validEntries
+          .map(([id, j]) => `【${id}】\n${JSON.stringify(j, null, 2)}`).join('\n\n')
+        send({ event: 'analysis_start' })
+
+        for (let attempt = 0; attempt <= 2; attempt++) {
+          if (attempt > 0) await sleep(600 * attempt)
+          try {
+            const analysisStream = await client.chat.completions.create({
+              model, temperature: 0.7, stream: true,
+              messages: [
+                { role: 'system', content: buildCrossAnalysisPrompt(judgmentsText) },
+                { role: 'user', content: `用户问题：${task}` },
+              ],
+            })
+            let accumulated = ''
+            for await (const chunk of analysisStream) {
+              const token = chunk.choices[0]?.delta?.content ?? ''
+              if (token) { accumulated += token; send({ event: 'analysis_token', token }) }
+            }
+            send({ event: 'analysis_complete', analysis: parseJSON<CrossAnalysis>(accumulated) })
+            break
+          } catch (err) {
+            if (attempt === 2) send({ event: 'analysis_complete', analysis: null, error: String(err) })
+          }
+        }
       }
 
       try {
@@ -257,53 +290,44 @@ export async function POST(request: Request) {
           const advisor = ADVISORS.find(a => a.id === targetAdvisor)
           if (advisor) {
             const prefix = buildFollowUpPrefix(previousJudgments, targetAdvisor)
-            await runAdvisor(advisor, prefix || undefined)
+            const judgment = await runAdvisor(advisor, prefix || undefined)
+
+            // 追问后也可以触发交叉分析（使用上一轮判断 + 本轮追问结果）
+            if (followUpAnalysis && judgment) {
+              const allJudgments: Partial<Record<AdvisorId, AdvisorJudgment>> = {}
+              for (const pj of previousJudgments) {
+                allJudgments[pj.advisorId] = pj.judgment
+              }
+              allJudgments[targetAdvisor] = judgment  // 用追问后的新回答覆盖
+              await runCrossAnalysis(allJudgments)
+            }
           }
           send({ event: 'complete' })
           return
         }
 
-        // ── 全团模式 ──────────────────────────────────────────────────────
+        // ── 全团模式（并行调用，按完成顺序推送）──────────────────────────
         const completedJudgments: Partial<Record<AdvisorId, AdvisorJudgment>> = {}
-        for (const advisor of ADVISORS) {
+
+        // 并行发起所有顾问调用
+        const advisorPromises = ADVISORS.map(async (advisor) => {
           const judgment = await runAdvisor(advisor)
           if (judgment) completedJudgments[advisor.id as AdvisorId] = judgment
-        }
+          return { advisorId: advisor.id as AdvisorId, judgment }
+        })
+
+        // 等待所有完成（每个完成时前端已收到 advisor_complete 事件）
+        await Promise.all(advisorPromises)
 
         // ── 交叉分析 ──────────────────────────────────────────────────────
-        const validEntries = Object.entries(completedJudgments).filter(([, j]) => j != null)
-        if (validEntries.length > 0) {
-          const judgmentsText = validEntries
-            .map(([id, j]) => `【${id}】\n${JSON.stringify(j, null, 2)}`).join('\n\n')
-          send({ event: 'analysis_start' })
-
-          for (let attempt = 0; attempt <= 2; attempt++) {
-            if (attempt > 0) await sleep(600 * attempt)
-            try {
-              const analysisStream = await client.chat.completions.create({
-                model, temperature: 0.7, stream: true,
-                messages: [
-                  { role: 'system', content: buildCrossAnalysisPrompt(judgmentsText) },
-                  { role: 'user', content: `用户问题：${task}` },
-                ],
-              })
-              let accumulated = ''
-              for await (const chunk of analysisStream) {
-                const token = chunk.choices[0]?.delta?.content ?? ''
-                if (token) { accumulated += token; send({ event: 'analysis_token', token }) }
-              }
-              send({ event: 'analysis_complete', analysis: parseJSON<CrossAnalysis>(accumulated) })
-              break
-            } catch (err) {
-              if (attempt === 2) send({ event: 'analysis_complete', analysis: null, error: String(err) })
-            }
-          }
-        }
+        await runCrossAnalysis(completedJudgments)
 
         send({ event: 'complete' })
       } catch (err: unknown) {
         send({ event: 'error', error: err instanceof Error ? err.message : String(err) })
       } finally {
+        clearInterval(heartbeat)
+        closed = true
         controller.close()
       }
     },

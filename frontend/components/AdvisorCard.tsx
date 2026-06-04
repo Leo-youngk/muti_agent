@@ -1,30 +1,20 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState } from 'react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import type { AdvisorJudgment, AdvisorStatus } from '@/lib/types'
 import { ADVISOR_MAP } from '@/lib/advisors'
 import type { AdvisorId } from '@/lib/types'
-
-function useCopy() {
-  const [copied, setCopied] = useState(false)
-  const copy = useCallback((text: string) => {
-    navigator.clipboard.writeText(text).then(() => {
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
-    })
-  }, [])
-  return { copied, copy }
-}
+import { useCopy } from '@/lib/hooks'
 
 interface Props {
   advisorId: AdvisorId
   status: AdvisorStatus
   judgment?: AdvisorJudgment
-  /** advisor_token 流累积的原始文本，用于在 thinking 阶段实时展示 */
   streamingText?: string
-  /** 追问回调：点击后会选中该顾问进入追问模式 */
   onFollowUp?: () => void
-  /** 是否在追问模式下展示（高亮该卡片）*/
+  onRetry?: () => void
   isFollowUpTarget?: boolean
 }
 
@@ -35,7 +25,7 @@ const STANCE_STYLE: Record<string, { label: string; color: string; bg: string }>
   '需要更多信息': { label: '待定',       color: '#6B7280', bg: '#F9FAFB' },
 }
 
-export default function AdvisorCard({ advisorId, status, judgment, streamingText, onFollowUp, isFollowUpTarget }: Props) {
+export default function AdvisorCard({ advisorId, status, judgment, streamingText, onFollowUp, onRetry, isFollowUpTarget }: Props) {
   const [expanded, setExpanded] = useState(false)
   const { copied, copy } = useCopy()
   const meta = ADVISOR_MAP[advisorId]
@@ -57,13 +47,13 @@ export default function AdvisorCard({ advisorId, status, judgment, streamingText
       }}
     >
       {/* Header */}
-      <div className="px-5 pt-4 pb-3">
+      <div className="px-4 sm:px-5 pt-4 pb-3">
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2.5">
             <span className="text-lg font-bold" style={{ color: meta.color }}>{meta.icon}</span>
             <div>
               <span className="text-sm font-semibold text-[#0D0D0D]">{meta.name}</span>
-              <span className="ml-2 text-xs text-[#999]">{meta.nameEn}</span>
+              <span className="ml-2 text-xs text-[#999] hidden sm:inline">{meta.nameEn}</span>
             </div>
           </div>
           <div className="flex items-center gap-1.5">
@@ -97,9 +87,9 @@ export default function AdvisorCard({ advisorId, status, judgment, streamingText
       </div>
 
       {/* Content */}
-      <div className="px-5 pb-4">
+      <div className="px-4 sm:px-5 pb-4">
 
-        {/* ── 思考中：展示 token 流 ── */}
+        {/* ── 思考中 ── */}
         {status === 'thinking' && (
           <div>
             {streamingText ? (
@@ -121,20 +111,17 @@ export default function AdvisorCard({ advisorId, status, judgment, streamingText
           </div>
         )}
 
-        {/* ── 完成：结构化展示 ── */}
+        {/* ── 完成 ── */}
         {(status === 'done' || status === 'error') && judgment && (
           <div className="space-y-3">
-            {/* 核心判断 */}
             <p className="text-[15px] font-medium text-[#0D0D0D] leading-relaxed">
-              {judgment.core_judgment}
+              <Md>{judgment.core_judgment}</Md>
             </p>
 
-            {/* 推理 */}
-            <p className="text-sm text-[#444] leading-relaxed">
-              {judgment.reasoning}
-            </p>
+            <div className="text-sm text-[#444] leading-relaxed">
+              <Md>{judgment.reasoning}</Md>
+            </div>
 
-            {/* 批评 */}
             <div
               className="rounded-xl px-4 py-3"
               style={{ background: `${meta.color}0D`, borderLeft: `3px solid ${meta.color}` }}
@@ -142,10 +129,11 @@ export default function AdvisorCard({ advisorId, status, judgment, streamingText
               <p className="text-[10px] font-semibold uppercase tracking-widest mb-1.5" style={{ color: meta.color }}>
                 核心批评
               </p>
-              <p className="text-sm text-[#0D0D0D] leading-relaxed">{judgment.criticism}</p>
+              <div className="text-sm text-[#0D0D0D] leading-relaxed">
+                <Md>{judgment.criticism}</Md>
+              </div>
             </div>
 
-            {/* 展开/收起 */}
             {!expanded ? (
               <button
                 onClick={() => setExpanded(true)}
@@ -185,9 +173,23 @@ export default function AdvisorCard({ advisorId, status, judgment, streamingText
           </div>
         )}
 
-        {/* ── 错误且无 judgment ── */}
+        {/* ── 错误且无 judgment：显示重试按钮 ── */}
         {status === 'error' && !judgment && (
-          <p className="text-sm text-[#DC2626]">判断获取失败，已跳过</p>
+          <div className="flex items-center gap-3 py-2">
+            <p className="text-sm text-[#DC2626]">判断获取失败</p>
+            {onRetry && (
+              <button
+                onClick={onRetry}
+                className="flex items-center gap-1 text-xs font-medium text-[#555] hover:text-[#0D0D0D] px-2.5 py-1 rounded-full border border-[#DDDDE0] hover:bg-[#F5F5F5] transition-colors"
+              >
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                    d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                重试
+              </button>
+            )}
+          </div>
         )}
       </div>
     </div>
@@ -197,7 +199,6 @@ export default function AdvisorCard({ advisorId, status, judgment, streamingText
 // ── 流式文本展示块 ────────────────────────────────────────────────────────────
 
 function StreamingBlock({ text, color }: { text: string; color: string }) {
-  // 只展示最近 400 字符，避免卡片高度无限增长
   const visible = text.length > 400 ? '…' + text.slice(-400) : text
 
   return (
@@ -209,11 +210,7 @@ function StreamingBlock({ text, color }: { text: string; color: string }) {
         className="px-3 py-1.5 flex items-center gap-1.5"
         style={{ background: `${color}10`, borderBottom: `1px solid ${color}22` }}
       >
-        {/* 动态圆点 */}
-        <span
-          className="w-1.5 h-1.5 rounded-full animate-pulse"
-          style={{ background: color }}
-        />
+        <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: color }} />
         <span className="text-[10px] font-semibold uppercase tracking-widest" style={{ color }}>
           生成中
         </span>
@@ -234,9 +231,26 @@ function DetailRow({ label, value, color, italic }: {
   return (
     <div>
       <p className="text-[10px] font-semibold uppercase tracking-widest text-[#BBB] mb-1">{label}</p>
-      <p className={`text-sm leading-relaxed ${italic ? 'italic' : ''}`} style={{ color: color ?? '#333' }}>
-        {value}
-      </p>
+      <div className={`text-sm leading-relaxed ${italic ? 'italic' : ''}`} style={{ color: color ?? '#333' }}>
+        <Md>{value}</Md>
+      </div>
     </div>
+  )
+}
+
+function Md({ children }: { children: string }) {
+  return (
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm]}
+      components={{
+        p: ({ children: c }) => <span>{c}</span>,
+        strong: ({ children: c }) => <strong className="font-semibold">{c}</strong>,
+        ul: ({ children: c }) => <ul className="list-disc pl-4 space-y-0.5">{c}</ul>,
+        ol: ({ children: c }) => <ol className="list-decimal pl-4 space-y-0.5">{c}</ol>,
+        li: ({ children: c }) => <li>{c}</li>,
+      }}
+    >
+      {children}
+    </ReactMarkdown>
   )
 }

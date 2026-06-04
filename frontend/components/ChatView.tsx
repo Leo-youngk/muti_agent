@@ -17,21 +17,20 @@ interface Props {
   messages: Message[]
   onFollowUp: (advisorId: AdvisorId) => void
   onRegenerate: () => void
+  onRetryAdvisor: (advisorId: AdvisorId) => void
   onExamplePrompt: (prompt: string) => void
   isStreaming: boolean
 }
 
-export default function ChatView({ messages, onFollowUp, onRegenerate, onExamplePrompt, isStreaming }: Props) {
+export default function ChatView({ messages, onFollowUp, onRegenerate, onRetryAdvisor, onExamplePrompt, isStreaming }: Props) {
   const bottomRef = useRef<HTMLDivElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const [showScrollBtn, setShowScrollBtn] = useState(false)
 
-  // 新消息自动滚到底部
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
-  // 检测是否距底部超过 200px，显示回到底部按钮
   const handleScroll = useCallback(() => {
     const el = containerRef.current
     if (!el) return
@@ -61,7 +60,6 @@ export default function ChatView({ messages, onFollowUp, onRegenerate, onExample
             </span>
           ))}
         </div>
-        {/* 示例问题 */}
         <div className="w-full max-w-sm space-y-2">
           <p className="text-[11px] text-[#CCC] uppercase tracking-widest mb-3">试试这些问题</p>
           {EXAMPLE_PROMPTS.map((p, i) => (
@@ -89,7 +87,7 @@ export default function ChatView({ messages, onFollowUp, onRegenerate, onExample
         onScroll={handleScroll}
         className="h-full overflow-y-auto"
       >
-        <div className="max-w-3xl mx-auto px-6 py-8 space-y-8">
+        <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8 space-y-8">
           {messages.map(msg => {
             if (msg.role === 'user') {
               return (
@@ -107,6 +105,15 @@ export default function ChatView({ messages, onFollowUp, onRegenerate, onExample
               const isLastPanel = msg === panelMessages.at(-1)
               const isThisFollowUp = !!msg.followUpMeta
 
+              // ── 进度计数 ──
+              const doneCount = activeAdvisors.filter(a => {
+                const s = advisorStatus[a.id as AdvisorId]
+                return s === 'done' || s === 'error'
+              }).length
+              const totalCount = activeAdvisors.length
+              const allDone = doneCount === totalCount && totalCount > 0
+              const showProgress = isLastPanel && isStreaming && !allDone && totalCount > 1
+
               return (
                 <div key={msg.id} className="space-y-4">
                   {/* 追问标签 */}
@@ -118,20 +125,38 @@ export default function ChatView({ messages, onFollowUp, onRegenerate, onExample
                     </div>
                   )}
 
-                  {/* 顾问卡片 */}
+                  {/* 进度条 */}
+                  {showProgress && (
+                    <div className="flex items-center gap-3">
+                      <div className="flex-1 h-1 bg-[#F0F0F0] rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-[#0D0D0D] rounded-full transition-all duration-500"
+                          style={{ width: `${(doneCount / totalCount) * 100}%` }}
+                        />
+                      </div>
+                      <span className="text-xs text-[#999] shrink-0 tabular-nums">
+                        {doneCount}/{totalCount} 顾问已完成
+                      </span>
+                    </div>
+                  )}
+
+                  {/* 顾问卡片 - 移动端单列，桌面端双列 */}
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     {activeAdvisors.map(a => {
                       const aid = a.id as AdvisorId
-                      const isDone = advisorStatus[aid] === 'done' || advisorStatus[aid] === 'error'
-                      const showFollowUp = isDone && isLastPanel && !isStreaming
+                      const status = advisorStatus[aid]
+                      const isDone = status === 'done' || status === 'error'
+                      const showFollowUp = isDone && isLastPanel && !isStreaming && status === 'done'
+                      const showRetry = status === 'error' && !judgments[aid] && isLastPanel && !isStreaming
                       return (
                         <AdvisorCard
                           key={a.id}
                           advisorId={aid}
-                          status={advisorStatus[aid]}
+                          status={status}
                           judgment={judgments[aid]}
                           streamingText={streamingTexts?.[aid]}
                           onFollowUp={showFollowUp ? () => onFollowUp(aid) : undefined}
+                          onRetry={showRetry ? () => onRetryAdvisor(aid) : undefined}
                         />
                       )
                     })}
@@ -140,7 +165,7 @@ export default function ChatView({ messages, onFollowUp, onRegenerate, onExample
                   {/* 分歧 + 结论 */}
                   <ConclusionSection analysis={analysis} status={analysisStatus} streamingText={analysisStream} />
 
-                  {/* 重新生成按钮（最后一条完整 panel）*/}
+                  {/* 重新生成按钮 */}
                   {isLastPanel && !isStreaming && analysisStatus !== 'thinking' && (
                     <div className="flex justify-center pt-2">
                       <button

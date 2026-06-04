@@ -1,23 +1,32 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import type { CrossAnalysis } from '@/lib/types'
 import { ADVISORS } from '@/lib/advisors'
+import { useCopy } from '@/lib/hooks'
 import DisputeCard from './DisputeCard'
-
-function useCopy() {
-  const [copied, setCopied] = useState(false)
-  const copy = useCallback((text: string) => {
-    navigator.clipboard.writeText(text).then(() => {
-      setCopied(true); setTimeout(() => setCopied(false), 2000)
-    })
-  }, [])
-  return { copied, copy }
-}
 
 function getColor(name: string): string {
   const found = ADVISORS.find(a => a.name === name || a.nameEn === name)
   return found?.color ?? '#888'
+}
+
+function Md({ children, className }: { children: string; className?: string }) {
+  return (
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm]}
+      components={{
+        p: ({ children: c }) => <span className={className}>{c}</span>,
+        strong: ({ children: c }) => <strong className="font-semibold">{c}</strong>,
+        ul: ({ children: c }) => <ul className="list-disc pl-4 space-y-0.5">{c}</ul>,
+        ol: ({ children: c }) => <ol className="list-decimal pl-4 space-y-0.5">{c}</ol>,
+        li: ({ children: c }) => <li>{c}</li>,
+      }}
+    >
+      {children}
+    </ReactMarkdown>
+  )
 }
 
 export default function ConclusionSection({
@@ -93,7 +102,7 @@ export default function ConclusionSection({
 
       {/* 结论区 */}
       <div className="rounded-2xl border border-[#0D0D0D22] bg-[#0D0D0D] text-white overflow-hidden">
-        <div className="px-5 pt-5 pb-4 space-y-4">
+        <div className="px-4 sm:px-5 pt-5 pb-4 space-y-4">
           {/* Verdict + 复制 */}
           <div>
             <div className="flex items-center justify-between mb-2">
@@ -115,17 +124,21 @@ export default function ConclusionSection({
                 )}
               </button>
             </div>
-            <p className="text-[15px] font-medium leading-relaxed text-white">{conclusion.verdict}</p>
+            <div className="text-[15px] font-medium leading-relaxed text-white">
+              <Md>{conclusion.verdict}</Md>
+            </div>
           </div>
 
           {/* 核心矛盾 */}
           <div>
             <p className="text-[10px] font-semibold uppercase tracking-widest text-[#888] mb-1">核心矛盾</p>
-            <p className="text-sm text-[#CCC] leading-relaxed">{conclusion.core_tension}</p>
+            <div className="text-sm text-[#CCC] leading-relaxed">
+              <Md>{conclusion.core_tension}</Md>
+            </div>
           </div>
 
           {/* 最值得听 */}
-          <div className="flex gap-4">
+          <div className="flex flex-col sm:flex-row gap-4">
             <div className="flex-1">
               <p className="text-[10px] font-semibold uppercase tracking-widest text-[#888] mb-2">当前场景最值得听</p>
               <div className="flex flex-wrap gap-1.5 mb-1.5">
@@ -156,7 +169,9 @@ export default function ConclusionSection({
           {/* 集体盲点 */}
           <div className="rounded-xl bg-[#1A1A1A] px-4 py-3 border border-[#333]">
             <p className="text-[10px] font-semibold uppercase tracking-widest text-[#F59E0B] mb-1">集体盲点</p>
-            <p className="text-sm text-[#CCC] leading-relaxed">{conclusion.biggest_blind_spot}</p>
+            <div className="text-sm text-[#CCC] leading-relaxed">
+              <Md>{conclusion.biggest_blind_spot}</Md>
+            </div>
           </div>
 
           {/* 下一步 */}
@@ -166,7 +181,9 @@ export default function ConclusionSection({
               {conclusion.next_steps.map((step, i) => (
                 <div key={i} className="flex items-start gap-2.5">
                   <span className="text-xs font-bold text-[#555] mt-0.5 shrink-0">{i + 1}.</span>
-                  <p className="text-sm text-[#CCC] leading-relaxed">{step}</p>
+                  <div className="text-sm text-[#CCC] leading-relaxed">
+                    <Md>{step}</Md>
+                  </div>
                 </div>
               ))}
             </div>
