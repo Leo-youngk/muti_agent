@@ -39,23 +39,13 @@ ${profile}
 }`
 }
 
-/**
- * 追问模式：构建注入到用户消息最前面的上下文前缀。
- * 刻意不放进 system prompt——避免模型把背景当主题来回答，
- * 而是把用户的新问题当主题，背景只是参考。
- */
-function buildFollowUpPrefix(
-  previousJudgments: PreviousJudgment[],
-  targetId: AdvisorId
-): string {
+function buildFollowUpPrefix(previousJudgments: PreviousJudgment[], targetId: AdvisorId): string {
   const others = previousJudgments.filter(p => p.advisorId !== targetId)
   if (others.length === 0) return ''
-
   const lines = others.map(({ judgment }) =>
     `- ${judgment.advisor || targetId}（${judgment.stance}）：${judgment.core_judgment}`
   ).join('\n')
-
-  return `[参考背景：上一轮其他顾问的立场]\n${lines}\n[以上仅供你在回答时参考，请优先完整回答用户的新问题]\n---`
+  return `[参考背景：上一轮其他顾问的立场]\n${lines}\n[以上仅供参考，请优先完整回答用户的新问题]\n---`
 }
 
 function buildCrossAnalysisPrompt(judgmentsText: string): string {
@@ -118,40 +108,42 @@ const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
 // ─── Route Handler ─────────────────────────────────────────────────────────────
 
 export async function POST(request: Request) {
-  const apiKey = process.env.OPENAI_API_KEY?.trim()
-  if (!apiKey) return Response.json({ error: 'OPENAI_API_KEY is not configured.' }, { status: 400 })
-
-  const rawBase = process.env.OPENAI_BASE_URL?.trim()
-  const baseURL = rawBase || undefined
-  const model = process.env.AI_MODEL?.trim() || 'gpt-4o'
-
-  if (baseURL) {
-    try { new URL(baseURL) } catch {
-      return Response.json({ error: `Invalid OPENAI_BASE_URL: "${baseURL}"` }, { status: 500 })
-    }
-  }
-
   let body: {
     task?: string
     history?: HistoryMessage[]
-    /** 前端选择的模型，优先级高于环境变量 */
     model?: string
-    /** 追问模式：只回答这一个顾问 */
+    /** 用户在前端设置的 API Key（优先于环境变量）*/
+    clientApiKey?: string
+    /** 用户在前端设置的 Base URL（优先于环境变量）*/
+    clientBaseUrl?: string
+    /** 用户自定义的顾问档案 */
+    customProfiles?: Partial<Record<AdvisorId, string>>
     targetAdvisor?: AdvisorId
-    /** 追问模式：上一轮所有顾问的判断，用于注入上下文 */
     previousJudgments?: PreviousJudgment[]
   }
   try { body = await request.json() } catch { body = {} }
 
+  // API Key: 前端配置 > 环境变量
+  const apiKey = body.clientApiKey?.trim() || process.env.OPENAI_API_KEY?.trim()
+  if (!apiKey) return Response.json({ error: 'API Key 未配置。请在设置中填写或配置环境变量 OPENAI_API_KEY。' }, { status: 400 })
+
+  const rawBase = body.clientBaseUrl?.trim() || process.env.OPENAI_BASE_URL?.trim()
+  const baseURL = rawBase || undefined
+  const model = body.model?.trim() || process.env.AI_MODEL?.trim() || 'gpt-4o'
+
+  if (baseURL) {
+    try { new URL(baseURL) } catch {
+      return Response.json({ error: `Invalid Base URL: "${baseURL}"` }, { status: 500 })
+    }
+  }
+
   const task: string = (body.task ?? '').trim()
   if (!task) return Response.json({ error: 'Task cannot be empty.' }, { status: 422 })
-
-  // 前端传入的模型优先，其次环境变量，最后默认值
-  const resolvedModel = (body.model?.trim() || model)
 
   const history: HistoryMessage[] = (body.history ?? []).slice(-6)
   const targetAdvisor = body.targetAdvisor ?? null
   const previousJudgments: PreviousJudgment[] = body.previousJudgments ?? []
+  const customProfiles: Partial<Record<AdvisorId, string>> = body.customProfiles ?? {}
 
   const client = new OpenAI({ apiKey, baseURL })
   const encoder = new TextEncoder()
@@ -162,9 +154,6 @@ export async function POST(request: Request) {
         try { controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`)) } catch {}
       }
 
-      /** 调用单个顾问，含 token 流 + 重试
-       *  @param userMsgPrefix 追问模式下前置到用户消息的参考背景（不进入 system prompt）
-       */
       async function runAdvisor(
         advisor: typeof ADVISORS[0],
         userMsgPrefix?: string
@@ -172,32 +161,26 @@ export async function POST(request: Request) {
         const advisorId = advisor.id as AdvisorId
         send({ event: 'advisor_start', advisorId })
 
-        // 追问模式：把背景前缀拼到用户消息里，让模型清楚知道新问题是主体
+        // 优先使用用户自定义档案
+        const profile = customProfiles[advisorId] || advisor.profile
         const userContent = userMsgPrefix ? `${userMsgPrefix}\n${task}` : task
 
         for (let attempt = 0; attempt <= 2; attempt++) {
           if (attempt > 0) await sleep(600 * attempt)
           try {
             const stream = await client.chat.completions.create({
-              model: resolvedModel,
-              temperature: 0.85,
-              stream: true,
+              model, temperature: 0.85, stream: true,
               messages: [
-                { role: 'system', content: buildAdvisorSystemPrompt(advisor.profile) },
+                { role: 'system', content: buildAdvisorSystemPrompt(profile) },
                 ...history.map(h => ({ role: h.role as 'user' | 'assistant', content: h.content })),
                 { role: 'user', content: userContent },
               ],
             })
-
             let accumulated = ''
             for await (const chunk of stream) {
               const token = chunk.choices[0]?.delta?.content ?? ''
-              if (token) {
-                accumulated += token
-                send({ event: 'advisor_token', advisorId, token })
-              }
+              if (token) { accumulated += token; send({ event: 'advisor_token', advisorId, token }) }
             }
-
             const judgment = parseJSON<AdvisorJudgment>(accumulated)
             send({ event: 'advisor_complete', advisorId, judgment })
             return judgment
@@ -212,7 +195,7 @@ export async function POST(request: Request) {
       }
 
       try {
-        // ── 追问模式：只运行一个顾问，注入其他人的判断 ──────────────────
+        // ── 追问模式 ──────────────────────────────────────────────────────
         if (targetAdvisor) {
           const advisor = ADVISORS.find(a => a.id === targetAdvisor)
           if (advisor) {
@@ -223,26 +206,25 @@ export async function POST(request: Request) {
           return
         }
 
-        // ── 全团模式：逐个串行运行所有顾问 ─────────────────────────────
+        // ── 全团模式 ──────────────────────────────────────────────────────
         const completedJudgments: Partial<Record<AdvisorId, AdvisorJudgment>> = {}
         for (const advisor of ADVISORS) {
           const judgment = await runAdvisor(advisor)
           if (judgment) completedJudgments[advisor.id as AdvisorId] = judgment
         }
 
-        // ── 交叉分析 ─────────────────────────────────────────────────────
+        // ── 交叉分析 ──────────────────────────────────────────────────────
         const validEntries = Object.entries(completedJudgments).filter(([, j]) => j != null)
         if (validEntries.length > 0) {
           const judgmentsText = validEntries
-            .map(([id, j]) => `【${id}】\n${JSON.stringify(j, null, 2)}`)
-            .join('\n\n')
+            .map(([id, j]) => `【${id}】\n${JSON.stringify(j, null, 2)}`).join('\n\n')
           send({ event: 'analysis_start' })
 
           for (let attempt = 0; attempt <= 2; attempt++) {
             if (attempt > 0) await sleep(600 * attempt)
             try {
               const analysisStream = await client.chat.completions.create({
-                model: resolvedModel, temperature: 0.7, stream: true,
+                model, temperature: 0.7, stream: true,
                 messages: [
                   { role: 'system', content: buildCrossAnalysisPrompt(judgmentsText) },
                   { role: 'user', content: `用户问题：${task}` },

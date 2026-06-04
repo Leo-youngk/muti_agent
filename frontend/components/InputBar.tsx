@@ -79,6 +79,7 @@ export default function InputBar({ onSubmit, isStreaming, onStop, targetAdvisor,
             onChange={handleChange}
             onKeyDown={handleKeyDown}
             disabled={isStreaming}
+            autoFocus
             placeholder={
               isStreaming
                 ? '顾问正在回答…'

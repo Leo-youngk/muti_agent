@@ -1,9 +1,20 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import type { AdvisorJudgment, AdvisorStatus } from '@/lib/types'
 import { ADVISOR_MAP } from '@/lib/advisors'
 import type { AdvisorId } from '@/lib/types'
+
+function useCopy() {
+  const [copied, setCopied] = useState(false)
+  const copy = useCallback((text: string) => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    })
+  }, [])
+  return { copied, copy }
+}
 
 interface Props {
   advisorId: AdvisorId
@@ -26,8 +37,14 @@ const STANCE_STYLE: Record<string, { label: string; color: string; bg: string }>
 
 export default function AdvisorCard({ advisorId, status, judgment, streamingText, onFollowUp, isFollowUpTarget }: Props) {
   const [expanded, setExpanded] = useState(false)
+  const { copied, copy } = useCopy()
   const meta = ADVISOR_MAP[advisorId]
   const stance = judgment ? (STANCE_STYLE[judgment.stance] ?? STANCE_STYLE['需要更多信息']) : null
+
+  const getJudgmentText = () => {
+    if (!judgment) return ''
+    return `【${judgment.advisor}】${judgment.stance}\n核心判断：${judgment.core_judgment}\n推理：${judgment.reasoning}\n核心批评：${judgment.criticism}\n关注焦点：${judgment.focus}\n要求改变：${judgment.demand}\n如何切入：${judgment.approach}\n盲点：${judgment.blind_spot}`
+  }
 
   return (
     <div
@@ -49,14 +66,32 @@ export default function AdvisorCard({ advisorId, status, judgment, streamingText
               <span className="ml-2 text-xs text-[#999]">{meta.nameEn}</span>
             </div>
           </div>
-          {stance && (
-            <span
-              className="text-xs font-semibold px-2.5 py-1 rounded-full"
-              style={{ color: stance.color, background: stance.bg }}
-            >
-              {stance.label}
-            </span>
-          )}
+          <div className="flex items-center gap-1.5">
+            {stance && (
+              <span className="text-xs font-semibold px-2.5 py-1 rounded-full"
+                style={{ color: stance.color, background: stance.bg }}>
+                {stance.label}
+              </span>
+            )}
+            {(status === 'done') && judgment && (
+              <button
+                onClick={() => copy(getJudgmentText())}
+                className="p-1.5 rounded-lg text-[#CCC] hover:text-[#888] hover:bg-[#F5F5F5] transition-all"
+                title="复制判断内容"
+              >
+                {copied ? (
+                  <svg className="w-3.5 h-3.5 text-[#16A34A]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                  </svg>
+                ) : (
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <rect x="9" y="9" width="13" height="13" rx="2" strokeWidth="1.8" />
+                    <path strokeWidth="1.8" d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
+                  </svg>
+                )}
+              </button>
+            )}
+          </div>
         </div>
         <p className="text-[11px] text-[#BBB]">{meta.tagline}</p>
       </div>

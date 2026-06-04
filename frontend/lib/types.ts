@@ -67,6 +67,15 @@ export interface Thread {
   createdAt: number
 }
 
+/** 用户可配置的全局设置，存储在 localStorage */
+export interface AppSettings {
+  apiKey: string
+  baseUrl: string
+  defaultModel: string
+  /** 顾问档案自定义（为空字符串时使用内置默认值）*/
+  customProfiles: Partial<Record<AdvisorId, string>>
+}
+
 /** 用于传递给后端的对话历史 */
 export interface HistoryMessage {
   role: 'user' | 'assistant'

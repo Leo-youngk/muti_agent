@@ -1,8 +1,19 @@
 'use client'
 
+import { useState, useCallback } from 'react'
 import type { CrossAnalysis } from '@/lib/types'
 import { ADVISORS } from '@/lib/advisors'
 import DisputeCard from './DisputeCard'
+
+function useCopy() {
+  const [copied, setCopied] = useState(false)
+  const copy = useCallback((text: string) => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true); setTimeout(() => setCopied(false), 2000)
+    })
+  }, [])
+  return { copied, copy }
+}
 
 function getColor(name: string): string {
   const found = ADVISORS.find(a => a.name === name || a.nameEn === name)
@@ -10,14 +21,26 @@ function getColor(name: string): string {
 }
 
 export default function ConclusionSection({
-  analysis,
-  status,
-  streamingText,
+  analysis, status, streamingText,
 }: {
   analysis?: CrossAnalysis
   status: 'idle' | 'thinking' | 'done'
   streamingText?: string
 }) {
+  const { copied, copy } = useCopy()
+
+  const getConclusionText = () => {
+    if (!analysis) return ''
+    const c = analysis.conclusion
+    return [
+      `主持人判断：${c.verdict}`,
+      `核心矛盾：${c.core_tension}`,
+      `最值得听：${c.top_voices.join('、')} — ${c.top_voices_reason}`,
+      c.reference_only.length > 0 ? `仅供参考：${c.reference_only.join('、')} — ${c.reference_only_reason}` : '',
+      `集体盲点：${c.biggest_blind_spot}`,
+      `建议行动：\n${c.next_steps.map((s, i) => `${i + 1}. ${s}`).join('\n')}`,
+    ].filter(Boolean).join('\n\n')
+  }
   if (status === 'idle') return null
 
   if (status === 'thinking') {
@@ -71,9 +94,27 @@ export default function ConclusionSection({
       {/* 结论区 */}
       <div className="rounded-2xl border border-[#0D0D0D22] bg-[#0D0D0D] text-white overflow-hidden">
         <div className="px-5 pt-5 pb-4 space-y-4">
-          {/* Verdict */}
+          {/* Verdict + 复制 */}
           <div>
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-[#888] mb-2">主持人判断</p>
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-[10px] font-semibold uppercase tracking-widest text-[#888]">主持人判断</p>
+              <button
+                onClick={() => copy(getConclusionText())}
+                className="p-1 rounded-md text-[#555] hover:text-white hover:bg-white/10 transition-all"
+                title="复制结论"
+              >
+                {copied ? (
+                  <svg className="w-3.5 h-3.5 text-[#4ADE80]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                  </svg>
+                ) : (
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <rect x="9" y="9" width="13" height="13" rx="2" strokeWidth="1.8" />
+                    <path strokeWidth="1.8" d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
+                  </svg>
+                )}
+              </button>
+            </div>
             <p className="text-[15px] font-medium leading-relaxed text-white">{conclusion.verdict}</p>
           </div>
 
