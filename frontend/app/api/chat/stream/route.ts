@@ -1,28 +1,29 @@
 import OpenAI from 'openai'
 import { ADVISORS } from '@/lib/advisors'
-import type { AdvisorId, AdvisorJudgment, CrossAnalysis, HistoryMessage } from '@/lib/types'
+import type { AdvisorId, AdvisorJudgment, CrossAnalysis, HistoryMessage, PreviousJudgment } from '@/lib/types'
 
 export const runtime = 'nodejs'
 export const maxDuration = 120
 
 // ─── Prompt 构建 ───────────────────────────────────────────────────────────────
 
-function buildAdvisorPrompt(profile: string): string {
+function buildAdvisorSystemPrompt(profile: string, followUpContext?: string): string {
   return `你是一个人物思维模拟系统。你的任务是深度还原以下人物面对一个具体问题时的判断方式。
 
 你不是在"给建议"，你是在模拟这个人——用他的优先级、他的偏好、他的批评习惯、他的盲点来思考这个问题。
 
 === 人物档案 ===
 ${profile}
-=== 档案结束 ===
+=== 档案结束 ===${followUpContext ? `\n\n${followUpContext}` : ''}
 
 要求：
 1. 你的判断必须有明确立场：支持、反对、或有条件支持。不允许"既有机会也有风险"式的骑墙。
 2. 你的语言风格必须匹配档案中描述的表达方式。
 3. 你的批评必须从这个人物独特的思维角度出发，不能是通用商业建议。
 4. 使用"以 XX 的思维方式，他大概率会……"这样的表述框架。不要写成"XX 说过……"或"XX 一定会……"。
-5. 如果这是一个追问或后续问题，请参考之前的对话上下文，保持判断的连贯性。
-6. 输出必须是纯 JSON，不要在 JSON 前后加任何文字或 markdown 标记。
+5. 所有输出内容必须使用简体中文，包括 JSON 字段的值。
+6. "stance" 字段必须从以下四个值中精确选一个，不得修改：支持、反对、有条件支持、需要更多信息
+7. 输出必须是纯 JSON，不要在 JSON 前后加任何文字或 markdown 标记。
 
 输出 JSON 格式（所有字段必须存在）：
 {
@@ -36,6 +37,27 @@ ${profile}
   "approach": "如果他亲自处理这件事，会怎么切入",
   "blind_spot": "他自己在这个问题上可能忽略或低估的东西"
 }`
+}
+
+/** 为追问模式构建"其他顾问观点摘要"上下文 */
+function buildFollowUpContext(
+  previousJudgments: PreviousJudgment[],
+  targetId: AdvisorId
+): string {
+  const others = previousJudgments.filter(p => p.advisorId !== targetId)
+  if (others.length === 0) return ''
+
+  const lines = others.map(({ judgment }) =>
+    `• ${judgment.advisor || '未知'}（${judgment.stance}）：${judgment.core_judgment}\n  批评：${judgment.criticism}`
+  ).join('\n')
+
+  return `=== 追问背景：本轮其他顾问的立场 ===
+${lines}
+=== 背景结束 ===
+
+这是一个追问对话。用户在看过所有顾问判断后，特别选择了你进行深入追问。
+你可以：（1）回应或反驳上面某位顾问的观点；（2）深入展开你的某个核心判断；（3）提供其他顾问忽视的新视角。
+判断要比第一轮更有深度，更具体。`
 }
 
 function buildCrossAnalysisPrompt(judgmentsText: string): string {
@@ -68,7 +90,7 @@ ${judgmentsText}
   ],
   "conclusion": {
     "core_tension": "这个问题最核心的矛盾是什么",
-    "top_voices": ["最值得听的2-3个人物名字"],
+    "top_voices": ["最值得听的2个人物名字"],
     "top_voices_reason": "为什么这几个人的判断在当前问题上最相关",
     "reference_only": ["判断只适合参考的人物名字"],
     "reference_only_reason": "为什么这几个人的判断在当前问题上不够适用",
@@ -82,19 +104,14 @@ ${judgmentsText}
 
 // ─── 工具函数 ──────────────────────────────────────────────────────────────────
 
-/** 从可能带有 markdown 代码块的文本中提取 JSON */
 function parseJSON<T>(text: string): T | null {
-  // 1. 去掉 markdown 代码块
   const stripped = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim()
   try { return JSON.parse(stripped) as T } catch {}
-
-  // 2. 找最外层的 { } 提取
   const first = stripped.indexOf('{')
   const last = stripped.lastIndexOf('}')
   if (first !== -1 && last > first) {
     try { return JSON.parse(stripped.slice(first, last + 1)) as T } catch {}
   }
-
   return null
 }
 
@@ -104,9 +121,7 @@ const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
 
 export async function POST(request: Request) {
   const apiKey = process.env.OPENAI_API_KEY?.trim()
-  if (!apiKey) {
-    return Response.json({ error: 'OPENAI_API_KEY is not configured.' }, { status: 400 })
-  }
+  if (!apiKey) return Response.json({ error: 'OPENAI_API_KEY is not configured.' }, { status: 400 })
 
   const rawBase = process.env.OPENAI_BASE_URL?.trim()
   const baseURL = rawBase || undefined
@@ -118,14 +133,22 @@ export async function POST(request: Request) {
     }
   }
 
-  let body: { task?: string; history?: HistoryMessage[] }
+  let body: {
+    task?: string
+    history?: HistoryMessage[]
+    /** 追问模式：只回答这一个顾问 */
+    targetAdvisor?: AdvisorId
+    /** 追问模式：上一轮所有顾问的判断，用于注入上下文 */
+    previousJudgments?: PreviousJudgment[]
+  }
   try { body = await request.json() } catch { body = {} }
 
   const task: string = (body.task ?? '').trim()
   if (!task) return Response.json({ error: 'Task cannot be empty.' }, { status: 422 })
 
-  // 最多保留最近 3 轮对话（6 条消息）
   const history: HistoryMessage[] = (body.history ?? []).slice(-6)
+  const targetAdvisor = body.targetAdvisor ?? null
+  const previousJudgments: PreviousJudgment[] = body.previousJudgments ?? []
 
   const client = new OpenAI({ apiKey, baseURL })
   const encoder = new TextEncoder()
@@ -133,105 +156,99 @@ export async function POST(request: Request) {
   const responseStream = new ReadableStream({
     async start(controller) {
       function send(data: object) {
-        try {
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`))
-        } catch {
-          // controller 已关闭，忽略
-        }
+        try { controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`)) } catch {}
       }
 
-      try {
-        const completedJudgments: Partial<Record<AdvisorId, AdvisorJudgment>> = {}
+      /** 调用单个顾问，含 token 流 + 重试 */
+      async function runAdvisor(
+        advisor: typeof ADVISORS[0],
+        extraSystemContent?: string
+      ): Promise<AdvisorJudgment | null> {
+        const advisorId = advisor.id as AdvisorId
+        send({ event: 'advisor_start', advisorId })
 
-        // ── 串行逐个调用顾问 ──────────────────────────────────────────
-        for (const advisor of ADVISORS) {
-          const advisorId = advisor.id as AdvisorId
-          send({ event: 'advisor_start', advisorId })
+        for (let attempt = 0; attempt <= 2; attempt++) {
+          if (attempt > 0) await sleep(600 * attempt)
+          try {
+            const stream = await client.chat.completions.create({
+              model,
+              temperature: 0.85,
+              stream: true,
+              messages: [
+                { role: 'system', content: buildAdvisorSystemPrompt(advisor.profile, extraSystemContent) },
+                ...history.map(h => ({ role: h.role as 'user' | 'assistant', content: h.content })),
+                { role: 'user', content: task },
+              ],
+            })
 
-          let done = false
-          for (let attempt = 0; attempt <= 2 && !done; attempt++) {
-            if (attempt > 0) await sleep(600 * attempt)
-
-            try {
-              const stream = await client.chat.completions.create({
-                model,
-                temperature: 0.85,
-                stream: true,
-                messages: [
-                  { role: 'system', content: buildAdvisorPrompt(advisor.profile) },
-                  // 注入对话历史，让顾问能感知上下文
-                  ...history.map(h => ({
-                    role: h.role as 'user' | 'assistant',
-                    content: h.content,
-                  })),
-                  { role: 'user', content: task },
-                ],
-              })
-
-              let accumulated = ''
-              for await (const chunk of stream) {
-                const token = chunk.choices[0]?.delta?.content ?? ''
-                if (token) {
-                  accumulated += token
-                  send({ event: 'advisor_token', advisorId, token })
-                }
+            let accumulated = ''
+            for await (const chunk of stream) {
+              const token = chunk.choices[0]?.delta?.content ?? ''
+              if (token) {
+                accumulated += token
+                send({ event: 'advisor_token', advisorId, token })
               }
+            }
 
-              const judgment = parseJSON<AdvisorJudgment>(accumulated)
-              send({ event: 'advisor_complete', advisorId, judgment })
-              if (judgment) completedJudgments[advisorId] = judgment
-              done = true
-            } catch (err) {
-              if (attempt === 2) {
-                // 三次失败后标记为错误并继续下一个顾问
-                send({ event: 'advisor_complete', advisorId, judgment: null, error: String(err) })
-                done = true
-              }
+            const judgment = parseJSON<AdvisorJudgment>(accumulated)
+            send({ event: 'advisor_complete', advisorId, judgment })
+            return judgment
+          } catch (err) {
+            if (attempt === 2) {
+              send({ event: 'advisor_complete', advisorId, judgment: null, error: String(err) })
+              return null
             }
           }
         }
+        return null
+      }
 
-        // ── 交叉分析 ────────────────────────────────────────────────────
+      try {
+        // ── 追问模式：只运行一个顾问，注入其他人的判断 ──────────────────
+        if (targetAdvisor) {
+          const advisor = ADVISORS.find(a => a.id === targetAdvisor)
+          if (advisor) {
+            const followUpContext = buildFollowUpContext(previousJudgments, targetAdvisor)
+            await runAdvisor(advisor, followUpContext || undefined)
+          }
+          send({ event: 'complete' })
+          return
+        }
+
+        // ── 全团模式：逐个串行运行所有顾问 ─────────────────────────────
+        const completedJudgments: Partial<Record<AdvisorId, AdvisorJudgment>> = {}
+        for (const advisor of ADVISORS) {
+          const judgment = await runAdvisor(advisor)
+          if (judgment) completedJudgments[advisor.id as AdvisorId] = judgment
+        }
+
+        // ── 交叉分析 ─────────────────────────────────────────────────────
         const validEntries = Object.entries(completedJudgments).filter(([, j]) => j != null)
         if (validEntries.length > 0) {
           const judgmentsText = validEntries
             .map(([id, j]) => `【${id}】\n${JSON.stringify(j, null, 2)}`)
             .join('\n\n')
-
           send({ event: 'analysis_start' })
 
-          let analysisDone = false
-          for (let attempt = 0; attempt <= 2 && !analysisDone; attempt++) {
+          for (let attempt = 0; attempt <= 2; attempt++) {
             if (attempt > 0) await sleep(600 * attempt)
-
             try {
               const analysisStream = await client.chat.completions.create({
-                model,
-                temperature: 0.7,
-                stream: true,
+                model, temperature: 0.7, stream: true,
                 messages: [
                   { role: 'system', content: buildCrossAnalysisPrompt(judgmentsText) },
                   { role: 'user', content: `用户问题：${task}` },
                 ],
               })
-
               let accumulated = ''
               for await (const chunk of analysisStream) {
                 const token = chunk.choices[0]?.delta?.content ?? ''
-                if (token) {
-                  accumulated += token
-                  send({ event: 'analysis_token', token })
-                }
+                if (token) { accumulated += token; send({ event: 'analysis_token', token }) }
               }
-
-              const analysis = parseJSON<CrossAnalysis>(accumulated)
-              send({ event: 'analysis_complete', analysis })
-              analysisDone = true
+              send({ event: 'analysis_complete', analysis: parseJSON<CrossAnalysis>(accumulated) })
+              break
             } catch (err) {
-              if (attempt === 2) {
-                send({ event: 'analysis_complete', analysis: null, error: String(err) })
-                analysisDone = true
-              }
+              if (attempt === 2) send({ event: 'analysis_complete', analysis: null, error: String(err) })
             }
           }
         }

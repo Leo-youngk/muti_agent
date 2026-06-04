@@ -11,6 +11,10 @@ interface Props {
   judgment?: AdvisorJudgment
   /** advisor_token 流累积的原始文本，用于在 thinking 阶段实时展示 */
   streamingText?: string
+  /** 追问回调：点击后会选中该顾问进入追问模式 */
+  onFollowUp?: () => void
+  /** 是否在追问模式下展示（高亮该卡片）*/
+  isFollowUpTarget?: boolean
 }
 
 const STANCE_STYLE: Record<string, { label: string; color: string; bg: string }> = {
@@ -20,7 +24,7 @@ const STANCE_STYLE: Record<string, { label: string; color: string; bg: string }>
   '需要更多信息': { label: '待定',       color: '#6B7280', bg: '#F9FAFB' },
 }
 
-export default function AdvisorCard({ advisorId, status, judgment, streamingText }: Props) {
+export default function AdvisorCard({ advisorId, status, judgment, streamingText, onFollowUp, isFollowUpTarget }: Props) {
   const [expanded, setExpanded] = useState(false)
   const meta = ADVISOR_MAP[advisorId]
   const stance = judgment ? (STANCE_STYLE[judgment.stance] ?? STANCE_STYLE['需要更多信息']) : null
@@ -28,7 +32,12 @@ export default function AdvisorCard({ advisorId, status, judgment, streamingText
   return (
     <div
       className="rounded-2xl border bg-white overflow-hidden transition-all duration-300"
-      style={{ borderColor: `${meta.color}22`, borderLeftWidth: 3, borderLeftColor: meta.color }}
+      style={{
+        borderColor: isFollowUpTarget ? meta.color : `${meta.color}22`,
+        borderLeftWidth: 3,
+        borderLeftColor: meta.color,
+        boxShadow: isFollowUpTarget ? `0 0 0 2px ${meta.color}44` : undefined,
+      }}
     >
       {/* Header */}
       <div className="px-5 pt-4 pb-3">
@@ -121,6 +130,20 @@ export default function AdvisorCard({ advisorId, status, judgment, streamingText
                   className="text-xs font-medium text-[#BBB]"
                 >
                   收起 ▴
+                </button>
+              </div>
+            )}
+
+            {/* 追问按钮 */}
+            {onFollowUp && (
+              <div className="pt-2 border-t border-[#F0F0F0] mt-2">
+                <button
+                  onClick={onFollowUp}
+                  className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full transition-all duration-150 hover:opacity-80 active:scale-95"
+                  style={{ background: `${meta.color}12`, color: meta.color }}
+                >
+                  <span>↗</span>
+                  <span>追问{meta.name}</span>
                 </button>
               </div>
             )}

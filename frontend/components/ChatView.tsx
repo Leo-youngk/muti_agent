@@ -9,9 +9,11 @@ import ConclusionSection from './ConclusionSection'
 
 interface Props {
   messages: Message[]
+  onFollowUp: (advisorId: AdvisorId) => void
+  isStreaming: boolean
 }
 
-export default function ChatView({ messages }: Props) {
+export default function ChatView({ messages, onFollowUp, isStreaming }: Props) {
   const bottomRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -73,15 +75,23 @@ export default function ChatView({ messages }: Props) {
               <div key={msg.id} className="space-y-4">
                 {/* 顾问卡片：逐个出现，串行展示 */}
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  {activeAdvisors.map(a => (
-                    <AdvisorCard
-                      key={a.id}
-                      advisorId={a.id as AdvisorId}
-                      status={advisorStatus[a.id as AdvisorId]}
-                      judgment={judgments[a.id as AdvisorId]}
-                      streamingText={streamingTexts?.[a.id as AdvisorId]}
-                    />
-                  ))}
+                  {activeAdvisors.map(a => {
+                    const aid = a.id as AdvisorId
+                    const isDone = advisorStatus[aid] === 'done' || advisorStatus[aid] === 'error'
+                    // 只在最后一条 panel 消息且未在 streaming 时才显示追问按钮
+                    const isLastPanel = msg === messages.filter(m => m.role === 'panel').at(-1)
+                    const showFollowUp = isDone && isLastPanel && !isStreaming
+                    return (
+                      <AdvisorCard
+                        key={a.id}
+                        advisorId={aid}
+                        status={advisorStatus[aid]}
+                        judgment={judgments[aid]}
+                        streamingText={streamingTexts?.[aid]}
+                        onFollowUp={showFollowUp ? () => onFollowUp(aid) : undefined}
+                      />
+                    )
+                  })}
                 </div>
 
                 {/* 分歧 + 结论 */}

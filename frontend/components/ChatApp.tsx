@@ -14,6 +14,8 @@ import type {
   AdvisorJudgment,
   CrossAnalysis,
   HistoryMessage,
+  PreviousJudgment,
+  FollowUpMeta,
 } from '@/lib/types'
 import { ADVISORS } from '@/lib/advisors'
 
@@ -34,7 +36,6 @@ function makeInitialPanel(): PanelResult {
   }
 }
 
-/** 从历史消息中提取对话上下文，供后端注入到 LLM 上下文 */
 function buildHistory(messages: Message[]): HistoryMessage[] {
   const result: HistoryMessage[] = []
   for (const msg of messages) {
@@ -48,8 +49,16 @@ function buildHistory(messages: Message[]): HistoryMessage[] {
       })
     }
   }
-  // 最近 3 轮（6 条）
   return result.slice(-6)
+}
+
+/** 从最近的 panel 消息中提取所有已完成的判断，用于追问上下文 */
+function buildPreviousJudgments(messages: Message[]): PreviousJudgment[] {
+  const recentPanel = [...messages].reverse().find(m => m.role === 'panel' && m.panel)
+  if (!recentPanel?.panel) return []
+  return Object.entries(recentPanel.panel.judgments)
+    .filter(([, j]) => j != null)
+    .map(([id, j]) => ({ advisorId: id as AdvisorId, judgment: j! }))
 }
 
 export default function ChatApp() {
@@ -57,6 +66,8 @@ export default function ChatApp() {
   const [activeId, setActiveId] = useState<string>(() => threads[0]?.id ?? '')
   const [isStreaming, setIsStreaming] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  /** 追问目标顾问 ID，null 表示全团模式 */
+  const [targetAdvisor, setTargetAdvisor] = useState<AdvisorId | null>(null)
 
   const activeThread = threads.find(t => t.id === activeId) ?? threads[0]
 
@@ -80,6 +91,11 @@ export default function ChatApp() {
     const t = makeThread()
     setThreads(prev => [t, ...prev])
     setActiveId(t.id)
+    setTargetAdvisor(null)
+  }, [])
+
+  const handleFollowUp = useCallback((advisorId: AdvisorId) => {
+    setTargetAdvisor(advisorId)
   }, [])
 
   const handleSubmit = useCallback(async (task: string) => {
@@ -87,16 +103,25 @@ export default function ChatApp() {
     setError(null)
     setIsStreaming(true)
     const tid = activeId
+    const isFollowUp = targetAdvisor !== null
 
-    // 在更新 state 之前捕获当前消息，用于构建 history
     const currentMessages = threads.find(t => t.id === tid)?.messages ?? []
     const history = buildHistory(currentMessages)
+    const previousJudgments = isFollowUp ? buildPreviousJudgments(currentMessages) : []
 
-    // 用户消息
     const userMsg: Message = { id: uuidv4(), role: 'user', content: task }
-    // 面板消息
     const panelMsgId = uuidv4()
-    const panelMsg: Message = { id: panelMsgId, role: 'panel', content: '', panel: makeInitialPanel() }
+    const followUpMeta: FollowUpMeta | undefined = isFollowUp && targetAdvisor
+      ? { targetAdvisorId: targetAdvisor, isFollowUp: true }
+      : undefined
+
+    const panelMsg: Message = {
+      id: panelMsgId,
+      role: 'panel',
+      content: '',
+      panel: makeInitialPanel(),
+      followUpMeta,
+    }
 
     updateThread(tid, t => ({
       ...t,
@@ -104,11 +129,21 @@ export default function ChatApp() {
       messages: [...t.messages, userMsg, panelMsg],
     }))
 
+    // 提交后清除追问选择
+    const capturedTarget = targetAdvisor
+    setTargetAdvisor(null)
+
     try {
       const res = await fetch('/api/chat/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ task, thread_id: tid, history }),
+        body: JSON.stringify({
+          task,
+          thread_id: tid,
+          history,
+          targetAdvisor: capturedTarget ?? undefined,
+          previousJudgments: previousJudgments.length > 0 ? previousJudgments : undefined,
+        }),
       })
 
       if (!res.ok) {
@@ -143,15 +178,10 @@ export default function ChatApp() {
               advisorStatus: { ...p.advisorStatus, [evt.advisorId!]: 'thinking' },
             }))
           } else if (evt.event === 'advisor_token' && evt.advisorId && evt.token) {
-            // token 流：追加到对应顾问的 streamingText
-            const id = evt.advisorId
-            const tok = evt.token
+            const id = evt.advisorId; const tok = evt.token
             updatePanel(tid, panelMsgId, p => ({
               ...p,
-              streamingTexts: {
-                ...p.streamingTexts,
-                [id]: (p.streamingTexts[id] ?? '') + tok,
-              },
+              streamingTexts: { ...p.streamingTexts, [id]: (p.streamingTexts[id] ?? '') + tok },
             }))
           } else if (evt.event === 'advisor_complete' && evt.advisorId) {
             updatePanel(tid, panelMsgId, p => ({
@@ -168,10 +198,7 @@ export default function ChatApp() {
             updatePanel(tid, panelMsgId, p => ({ ...p, analysisStatus: 'thinking' }))
           } else if (evt.event === 'analysis_token' && evt.token) {
             const tok = evt.token
-            updatePanel(tid, panelMsgId, p => ({
-              ...p,
-              analysisStream: p.analysisStream + tok,
-            }))
+            updatePanel(tid, panelMsgId, p => ({ ...p, analysisStream: p.analysisStream + tok }))
           } else if (evt.event === 'analysis_complete') {
             updatePanel(tid, panelMsgId, p => ({
               ...p,
@@ -179,8 +206,7 @@ export default function ChatApp() {
               analysis: evt.analysis as CrossAnalysis ?? undefined,
             }))
           } else if (evt.event === 'error') {
-            setError(evt.error ?? 'Unknown error')
-            break
+            setError(evt.error ?? 'Unknown error'); break
           } else if (evt.event === 'complete') {
             break
           }
@@ -191,7 +217,7 @@ export default function ChatApp() {
     }
 
     setIsStreaming(false)
-  }, [activeId, isStreaming, threads, updateThread, updatePanel])
+  }, [activeId, isStreaming, threads, targetAdvisor, updateThread, updatePanel])
 
   return (
     <div className="flex h-screen overflow-hidden bg-white">
@@ -212,8 +238,17 @@ export default function ChatApp() {
           </div>
         )}
 
-        <ChatView messages={activeThread?.messages ?? []} />
-        <InputBar onSubmit={handleSubmit} isStreaming={isStreaming} />
+        <ChatView
+          messages={activeThread?.messages ?? []}
+          onFollowUp={handleFollowUp}
+          isStreaming={isStreaming}
+        />
+        <InputBar
+          onSubmit={handleSubmit}
+          isStreaming={isStreaming}
+          targetAdvisor={targetAdvisor}
+          onClearTarget={() => setTargetAdvisor(null)}
+        />
       </main>
     </div>
   )

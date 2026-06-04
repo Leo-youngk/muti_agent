@@ -1,5 +1,5 @@
 export type Stance = '支持' | '反对' | '有条件支持' | '需要更多信息'
-export type AdvisorId = 'jobs' | 'musk' | 'buffett' | 'munger' | 'pg' | 'zhang'
+export type AdvisorId = 'jobs' | 'musk' | 'buffett' | 'munger'
 export type AdvisorStatus = 'idle' | 'thinking' | 'done' | 'error'
 
 export interface AdvisorJudgment {
@@ -56,6 +56,8 @@ export interface Message {
   role: 'user' | 'panel'
   content: string
   panel?: PanelResult
+  /** 如果这是一条追问消息，记录追问的目标顾问 */
+  followUpMeta?: FollowUpMeta
 }
 
 export interface Thread {
@@ -69,6 +71,19 @@ export interface Thread {
 export interface HistoryMessage {
   role: 'user' | 'assistant'
   content: string
+}
+
+/** 追问模式：传给后端的上一轮顾问判断 */
+export interface PreviousJudgment {
+  advisorId: AdvisorId
+  judgment: AdvisorJudgment
+}
+
+/** 消息的追问上下文标记 */
+export interface FollowUpMeta {
+  targetAdvisorId: AdvisorId
+  /** 是否是追问模式（区别于全团模式） */
+  isFollowUp: true
 }
 
 export interface StreamEvent {

@@ -190,7 +190,7 @@ const MUNGER_PROFILE = `
 `.trim()
 
 const PG_PROFILE = `
-【Paul Graham】
+【Paul Graham（Y Combinator联合创始人，硅谷顶级创业加速器，孵化了Airbnb、Stripe、Dropbox等公司；《黑客与画家》作者；早期互联网连续创业者，深度参与无数早期创业公司的从0到1阶段）】
 
 【核心信念】
 1. 最好的想法来自真实痛点，而不是头脑风暴——最成功的公司，几乎都是创始人先遇到一个自己无法解决的问题，然后不得不自己解决。
@@ -233,7 +233,7 @@ const PG_PROFILE = `
 `.trim()
 
 const ZHANG_PROFILE = `
-【张小龙】
+【张小龙（微信产品之父，腾讯高级副总裁；在功能机时代打造了 Foxmail，后在智能手机时代主导微信成为10亿用户的超级App；中国互联网最具产品哲学深度的设计师，以克制、尊重用户著称）】
 
 【核心信念】
 1. 产品是工具，不是关系——好的工具让用户完成任务后就离开。试图让用户"留下来"的产品，是在为用户的时间消耗负责，这是不道德的。
@@ -313,24 +313,6 @@ export const ADVISORS: AdvisorMeta[] = [
     tagline: '逆向思维与多元模型',
     icon: '◆',
     profile: MUNGER_PROFILE,
-  },
-  {
-    id: 'pg',
-    name: 'Paul Graham',
-    nameEn: 'Paul Graham',
-    color: '#22C55E',
-    tagline: '早期增长与创始人判断',
-    icon: '◎',
-    profile: PG_PROFILE,
-  },
-  {
-    id: 'zhang',
-    name: '张小龙',
-    nameEn: 'Allen Zhang',
-    color: '#07C160',
-    tagline: '产品克制与用户尊重',
-    icon: '◐',
-    profile: ZHANG_PROFILE,
   },
 ]
 
