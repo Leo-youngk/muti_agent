@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { v4 as uuidv4 } from 'uuid'
 import Sidebar from '@/components/Sidebar'
 import ChatView from '@/components/ChatView'
@@ -20,13 +20,23 @@ function makeThread(): Thread {
 }
 
 export default function Page() {
-  const [threads, setThreads] = useState<Thread[]>(() => [makeThread()])
-  const [activeId, setActiveId] = useState(() => threads[0].id)
+  const [threads, setThreads] = useState<Thread[]>([])
+  const [activeId, setActiveId] = useState<string>('')
   const [engine, setEngine] = useState<'langgraph' | 'autogen'>('langgraph')
   const [isStreaming, setIsStreaming] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [mounted, setMounted] = useState(false)
+
+  useEffect(() => {
+    const t = makeThread()
+    setThreads([t])
+    setActiveId(t.id)
+    setMounted(true)
+  }, [])
 
   const activeThread = threads.find(t => t.id === activeId) ?? threads[0]
+
+  if (!mounted) return null
 
   const updateThread = useCallback((id: string, fn: (t: Thread) => Thread) => {
     setThreads(prev => prev.map(t => (t.id === id ? fn(t) : t)))
