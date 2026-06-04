@@ -43,8 +43,12 @@ export interface CrossAnalysis {
 export interface PanelResult {
   judgments: Partial<Record<AdvisorId, AdvisorJudgment>>
   advisorStatus: Record<AdvisorId, AdvisorStatus>
+  /** 每个顾问的 token 流累积文本 */
+  streamingTexts: Partial<Record<AdvisorId, string>>
   analysis?: CrossAnalysis
   analysisStatus: 'idle' | 'thinking' | 'done'
+  /** 分析阶段的 token 流累积文本 */
+  analysisStream: string
 }
 
 export interface Message {
@@ -61,10 +65,26 @@ export interface Thread {
   createdAt: number
 }
 
+/** 用于传递给后端的对话历史 */
+export interface HistoryMessage {
+  role: 'user' | 'assistant'
+  content: string
+}
+
 export interface StreamEvent {
-  event: 'advisor_start' | 'advisor_complete' | 'analysis_start' | 'analysis_complete' | 'complete' | 'error'
+  event:
+    | 'advisor_start'
+    | 'advisor_token'
+    | 'advisor_complete'
+    | 'analysis_start'
+    | 'analysis_token'
+    | 'analysis_complete'
+    | 'complete'
+    | 'error'
   advisorId?: AdvisorId
-  judgment?: AdvisorJudgment
-  analysis?: CrossAnalysis
+  /** advisor_token / analysis_token 的单个 chunk */
+  token?: string
+  judgment?: AdvisorJudgment | null
+  analysis?: CrossAnalysis | null
   error?: string
 }

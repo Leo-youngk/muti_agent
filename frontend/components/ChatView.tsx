@@ -55,22 +55,41 @@ export default function ChatView({ messages }: Props) {
           }
 
           if (msg.role === 'panel' && msg.panel) {
-            const { judgments, advisorStatus, analysis, analysisStatus } = msg.panel
+            const {
+              judgments,
+              advisorStatus,
+              analysis,
+              analysisStatus,
+              streamingTexts,
+              analysisStream,
+            } = msg.panel
+
+            // 只渲染已经开始（非 idle）的顾问卡片，让卡片逐个出现
+            const activeAdvisors = ADVISORS.filter(
+              a => advisorStatus[a.id as AdvisorId] !== 'idle'
+            )
+
             return (
               <div key={msg.id} className="space-y-4">
-                {/* 六张顾问卡片 */}
+                {/* 顾问卡片：逐个出现，串行展示 */}
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  {ADVISORS.map(a => (
+                  {activeAdvisors.map(a => (
                     <AdvisorCard
                       key={a.id}
                       advisorId={a.id as AdvisorId}
                       status={advisorStatus[a.id as AdvisorId]}
                       judgment={judgments[a.id as AdvisorId]}
+                      streamingText={streamingTexts?.[a.id as AdvisorId]}
                     />
                   ))}
                 </div>
+
                 {/* 分歧 + 结论 */}
-                <ConclusionSection analysis={analysis} status={analysisStatus} />
+                <ConclusionSection
+                  analysis={analysis}
+                  status={analysisStatus}
+                  streamingText={analysisStream}
+                />
               </div>
             )
           }

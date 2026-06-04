@@ -12,25 +12,44 @@ function getColor(name: string): string {
 export default function ConclusionSection({
   analysis,
   status,
+  streamingText,
 }: {
   analysis?: CrossAnalysis
   status: 'idle' | 'thinking' | 'done'
+  streamingText?: string
 }) {
   if (status === 'idle') return null
 
   if (status === 'thinking') {
     return (
-      <div className="mt-6 space-y-2">
-        <p className="text-[11px] font-semibold uppercase tracking-widest text-[#BBB]">分歧分析</p>
-        <div className="flex items-center gap-2 py-3">
-          <div className="flex gap-1">
-            {[0, 150, 300].map(d => (
-              <span key={d} className="w-1.5 h-1.5 rounded-full bg-[#CCC] animate-bounce"
-                style={{ animationDelay: `${d}ms` }} />
-            ))}
+      <div className="mt-6 space-y-3">
+        <p className="text-[11px] font-semibold uppercase tracking-widest text-[#BBB]">主持人分析</p>
+        {streamingText ? (
+          <div className="rounded-xl overflow-hidden border border-[#EBEBEB]">
+            <div className="px-3 py-1.5 bg-[#F7F7F8] border-b border-[#EBEBEB] flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-[#888] animate-pulse" />
+              <span className="text-[10px] font-semibold uppercase tracking-widest text-[#888]">
+                正在综合分析
+              </span>
+            </div>
+            <pre
+              className="px-3 py-2.5 text-[11px] text-[#555] font-mono leading-relaxed whitespace-pre-wrap break-words bg-white"
+              style={{ maxHeight: '10rem', overflow: 'hidden' }}
+            >
+              {streamingText.length > 500 ? '…' + streamingText.slice(-500) : streamingText}
+            </pre>
           </div>
-          <span className="text-sm text-[#999]">正在分析分歧…</span>
-        </div>
+        ) : (
+          <div className="flex items-center gap-2 py-3">
+            <div className="flex gap-1">
+              {[0, 150, 300].map(d => (
+                <span key={d} className="w-1.5 h-1.5 rounded-full bg-[#CCC] animate-bounce"
+                  style={{ animationDelay: `${d}ms` }} />
+              ))}
+            </div>
+            <span className="text-sm text-[#999]">正在分析分歧…</span>
+          </div>
+        )}
       </div>
     )
   }
@@ -93,7 +112,7 @@ export default function ConclusionSection({
             )}
           </div>
 
-          {/* 最危险盲点 */}
+          {/* 集体盲点 */}
           <div className="rounded-xl bg-[#1A1A1A] px-4 py-3 border border-[#333]">
             <p className="text-[10px] font-semibold uppercase tracking-widest text-[#F59E0B] mb-1">集体盲点</p>
             <p className="text-sm text-[#CCC] leading-relaxed">{conclusion.biggest_blind_spot}</p>

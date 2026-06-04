@@ -5,7 +5,16 @@ import { v4 as uuidv4 } from 'uuid'
 import Sidebar from '@/components/Sidebar'
 import ChatView from '@/components/ChatView'
 import InputBar from '@/components/InputBar'
-import type { Message, Thread, PanelResult, StreamEvent, AdvisorId, AdvisorJudgment, CrossAnalysis } from '@/lib/types'
+import type {
+  Message,
+  Thread,
+  PanelResult,
+  StreamEvent,
+  AdvisorId,
+  AdvisorJudgment,
+  CrossAnalysis,
+  HistoryMessage,
+} from '@/lib/types'
 import { ADVISORS } from '@/lib/advisors'
 
 function makeThread(): Thread {
@@ -16,7 +25,31 @@ function makeInitialPanel(): PanelResult {
   const advisorStatus = Object.fromEntries(
     ADVISORS.map(a => [a.id, 'idle' as const])
   ) as Record<AdvisorId, 'idle'>
-  return { judgments: {}, advisorStatus, analysisStatus: 'idle' }
+  return {
+    judgments: {},
+    advisorStatus,
+    streamingTexts: {},
+    analysisStatus: 'idle',
+    analysisStream: '',
+  }
+}
+
+/** 从历史消息中提取对话上下文，供后端注入到 LLM 上下文 */
+function buildHistory(messages: Message[]): HistoryMessage[] {
+  const result: HistoryMessage[] = []
+  for (const msg of messages) {
+    if (msg.role === 'user') {
+      result.push({ role: 'user', content: msg.content })
+    } else if (msg.role === 'panel' && msg.panel?.analysis) {
+      const { verdict, top_voices } = msg.panel.analysis.conclusion
+      result.push({
+        role: 'assistant',
+        content: `[顾问团综合判断] 最值得听：${top_voices.join('、')}。主持人结论：${verdict}`,
+      })
+    }
+  }
+  // 最近 3 轮（6 条）
+  return result.slice(-6)
 }
 
 export default function ChatApp() {
@@ -38,7 +71,7 @@ export default function ChatApp() {
         ...t,
         messages: t.messages.map(m =>
           m.id === msgId && m.panel ? { ...m, panel: fn(m.panel) } : m
-        )
+        ),
       }
     }))
   }, [])
@@ -54,6 +87,10 @@ export default function ChatApp() {
     setError(null)
     setIsStreaming(true)
     const tid = activeId
+
+    // 在更新 state 之前捕获当前消息，用于构建 history
+    const currentMessages = threads.find(t => t.id === tid)?.messages ?? []
+    const history = buildHistory(currentMessages)
 
     // 用户消息
     const userMsg: Message = { id: uuidv4(), role: 'user', content: task }
@@ -71,7 +108,7 @@ export default function ChatApp() {
       const res = await fetch('/api/chat/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ task, thread_id: tid }),
+        body: JSON.stringify({ task, thread_id: tid, history }),
       })
 
       if (!res.ok) {
@@ -103,18 +140,38 @@ export default function ChatApp() {
           if (evt.event === 'advisor_start' && evt.advisorId) {
             updatePanel(tid, panelMsgId, p => ({
               ...p,
-              advisorStatus: { ...p.advisorStatus, [evt.advisorId!]: 'thinking' }
+              advisorStatus: { ...p.advisorStatus, [evt.advisorId!]: 'thinking' },
+            }))
+          } else if (evt.event === 'advisor_token' && evt.advisorId && evt.token) {
+            // token 流：追加到对应顾问的 streamingText
+            const id = evt.advisorId
+            const tok = evt.token
+            updatePanel(tid, panelMsgId, p => ({
+              ...p,
+              streamingTexts: {
+                ...p.streamingTexts,
+                [id]: (p.streamingTexts[id] ?? '') + tok,
+              },
             }))
           } else if (evt.event === 'advisor_complete' && evt.advisorId) {
             updatePanel(tid, panelMsgId, p => ({
               ...p,
-              advisorStatus: { ...p.advisorStatus, [evt.advisorId!]: 'done' },
+              advisorStatus: {
+                ...p.advisorStatus,
+                [evt.advisorId!]: evt.judgment ? 'done' : 'error',
+              },
               judgments: evt.judgment
                 ? { ...p.judgments, [evt.advisorId!]: evt.judgment as AdvisorJudgment }
                 : p.judgments,
             }))
           } else if (evt.event === 'analysis_start') {
             updatePanel(tid, panelMsgId, p => ({ ...p, analysisStatus: 'thinking' }))
+          } else if (evt.event === 'analysis_token' && evt.token) {
+            const tok = evt.token
+            updatePanel(tid, panelMsgId, p => ({
+              ...p,
+              analysisStream: p.analysisStream + tok,
+            }))
           } else if (evt.event === 'analysis_complete') {
             updatePanel(tid, panelMsgId, p => ({
               ...p,
@@ -134,7 +191,7 @@ export default function ChatApp() {
     }
 
     setIsStreaming(false)
-  }, [activeId, isStreaming, updateThread, updatePanel])
+  }, [activeId, isStreaming, threads, updateThread, updatePanel])
 
   return (
     <div className="flex h-screen overflow-hidden bg-white">

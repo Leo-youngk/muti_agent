@@ -9,16 +9,18 @@ interface Props {
   advisorId: AdvisorId
   status: AdvisorStatus
   judgment?: AdvisorJudgment
+  /** advisor_token 流累积的原始文本，用于在 thinking 阶段实时展示 */
+  streamingText?: string
 }
 
 const STANCE_STYLE: Record<string, { label: string; color: string; bg: string }> = {
-  '支持':       { label: '支持',       color: '#16A34A', bg: '#F0FDF4' },
-  '反对':       { label: '反对',       color: '#DC2626', bg: '#FEF2F2' },
-  '有条件支持': { label: '有条件支持', color: '#D97706', bg: '#FFFBEB' },
-  '需要更多信息': { label: '待定',     color: '#6B7280', bg: '#F9FAFB' },
+  '支持':         { label: '支持',       color: '#16A34A', bg: '#F0FDF4' },
+  '反对':         { label: '反对',       color: '#DC2626', bg: '#FEF2F2' },
+  '有条件支持':   { label: '有条件支持', color: '#D97706', bg: '#FFFBEB' },
+  '需要更多信息': { label: '待定',       color: '#6B7280', bg: '#F9FAFB' },
 }
 
-export default function AdvisorCard({ advisorId, status, judgment }: Props) {
+export default function AdvisorCard({ advisorId, status, judgment, streamingText }: Props) {
   const [expanded, setExpanded] = useState(false)
   const meta = ADVISOR_MAP[advisorId]
   const stance = judgment ? (STANCE_STYLE[judgment.stance] ?? STANCE_STYLE['需要更多信息']) : null
@@ -52,25 +54,30 @@ export default function AdvisorCard({ advisorId, status, judgment }: Props) {
 
       {/* Content */}
       <div className="px-5 pb-4">
-        {status === 'idle' && (
-          <p className="text-sm text-[#BBB] italic">等待中…</p>
-        )}
 
+        {/* ── 思考中：展示 token 流 ── */}
         {status === 'thinking' && (
-          <div className="flex items-center gap-2 py-2">
-            <div className="flex gap-1">
-              {[0, 150, 300].map(d => (
-                <span
-                  key={d}
-                  className="w-1.5 h-1.5 rounded-full animate-bounce"
-                  style={{ background: meta.color, animationDelay: `${d}ms` }}
-                />
-              ))}
-            </div>
-            <span className="text-xs text-[#999]">正在思考…</span>
+          <div>
+            {streamingText ? (
+              <StreamingBlock text={streamingText} color={meta.color} />
+            ) : (
+              <div className="flex items-center gap-2 py-2">
+                <div className="flex gap-1">
+                  {[0, 150, 300].map(d => (
+                    <span
+                      key={d}
+                      className="w-1.5 h-1.5 rounded-full animate-bounce"
+                      style={{ background: meta.color, animationDelay: `${d}ms` }}
+                    />
+                  ))}
+                </div>
+                <span className="text-xs text-[#999]">正在思考…</span>
+              </div>
+            )}
           </div>
         )}
 
+        {/* ── 完成：结构化展示 ── */}
         {(status === 'done' || status === 'error') && judgment && (
           <div className="space-y-3">
             {/* 核心判断 */}
@@ -83,7 +90,7 @@ export default function AdvisorCard({ advisorId, status, judgment }: Props) {
               {judgment.reasoning}
             </p>
 
-            {/* 批评 — 最突出 */}
+            {/* 批评 */}
             <div
               className="rounded-xl px-4 py-3"
               style={{ background: `${meta.color}0D`, borderLeft: `3px solid ${meta.color}` }}
@@ -120,10 +127,45 @@ export default function AdvisorCard({ advisorId, status, judgment }: Props) {
           </div>
         )}
 
+        {/* ── 错误且无 judgment ── */}
         {status === 'error' && !judgment && (
-          <p className="text-sm text-[#DC2626]">判断获取失败</p>
+          <p className="text-sm text-[#DC2626]">判断获取失败，已跳过</p>
         )}
       </div>
+    </div>
+  )
+}
+
+// ── 流式文本展示块 ────────────────────────────────────────────────────────────
+
+function StreamingBlock({ text, color }: { text: string; color: string }) {
+  // 只展示最近 400 字符，避免卡片高度无限增长
+  const visible = text.length > 400 ? '…' + text.slice(-400) : text
+
+  return (
+    <div
+      className="rounded-xl overflow-hidden"
+      style={{ background: `${color}08`, border: `1px solid ${color}22` }}
+    >
+      <div
+        className="px-3 py-1.5 flex items-center gap-1.5"
+        style={{ background: `${color}10`, borderBottom: `1px solid ${color}22` }}
+      >
+        {/* 动态圆点 */}
+        <span
+          className="w-1.5 h-1.5 rounded-full animate-pulse"
+          style={{ background: color }}
+        />
+        <span className="text-[10px] font-semibold uppercase tracking-widest" style={{ color }}>
+          生成中
+        </span>
+      </div>
+      <pre
+        className="px-3 py-2.5 text-[11px] text-[#555] font-mono leading-relaxed whitespace-pre-wrap break-words"
+        style={{ maxHeight: '9rem', overflow: 'hidden' }}
+      >
+        {visible}
+      </pre>
     </div>
   )
 }
