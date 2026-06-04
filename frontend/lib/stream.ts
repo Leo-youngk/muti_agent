@@ -2,20 +2,18 @@ import type { StreamEvent } from './types'
 
 export async function* streamChat(
   task: string,
-  engine: string,
   threadId: string,
-  backendUrl: string
 ): AsyncGenerator<StreamEvent> {
-  const res = await fetch(`${backendUrl}/api/chat/stream`, {
+  const res = await fetch('/api/chat/stream', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ task, engine, thread_id: threadId }),
+    body: JSON.stringify({ task, thread_id: threadId }),
   })
 
   if (!res.ok) {
     const text = await res.text()
     let detail = text
-    try { detail = JSON.parse(text).detail ?? text } catch {}
+    try { detail = JSON.parse(text).error ?? text } catch {}
     throw new Error(detail)
   }
 

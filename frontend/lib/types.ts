@@ -4,7 +4,6 @@ export interface Message {
   content: string
   agent?: string
   status?: 'waiting' | 'thinking' | 'done'
-  error?: string
 }
 
 export interface Thread {

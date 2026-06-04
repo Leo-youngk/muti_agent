@@ -5,19 +5,11 @@ import { useState, useRef, type KeyboardEvent, type ChangeEvent } from 'react'
 interface Props {
   onSubmit: (task: string) => void
   isStreaming: boolean
-  engine: string
 }
 
-export default function InputBar({ onSubmit, isStreaming, engine }: Props) {
+export default function InputBar({ onSubmit, isStreaming }: Props) {
   const [value, setValue] = useState('')
   const ref = useRef<HTMLTextAreaElement>(null)
-
-  const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      submit()
-    }
-  }
 
   const submit = () => {
     const trimmed = value.trim()
@@ -27,25 +19,22 @@ export default function InputBar({ onSubmit, isStreaming, engine }: Props) {
     if (ref.current) ref.current.style.height = 'auto'
   }
 
+  const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit() }
+  }
+
   const handleChange = (e: ChangeEvent<HTMLTextAreaElement>) => {
     setValue(e.target.value)
     e.target.style.height = 'auto'
     e.target.style.height = Math.min(e.target.scrollHeight, 200) + 'px'
   }
 
-  const engineLabel = engine === 'langgraph' ? 'LangGraph · token streaming' : 'AutoGen · message streaming'
-
   return (
     <div className="border-t border-[#EBEBEB] bg-white px-4 py-4">
       <div className="max-w-3xl mx-auto">
-        {/* Input box */}
-        <div
-          className={`flex items-end gap-3 rounded-2xl border px-4 py-3 transition-colors duration-150 ${
-            isStreaming
-              ? 'border-[#EBEBEB] bg-[#FAFAFA]'
-              : 'border-[#DDDDE0] bg-white focus-within:border-[#0D0D0D]'
-          }`}
-        >
+        <div className={`flex items-end gap-3 rounded-2xl border px-4 py-3 transition-colors duration-150 ${
+          isStreaming ? 'border-[#EBEBEB] bg-[#FAFAFA]' : 'border-[#DDDDE0] bg-white focus-within:border-[#0D0D0D]'
+        }`}>
           <textarea
             ref={ref}
             value={value}
@@ -60,7 +49,6 @@ export default function InputBar({ onSubmit, isStreaming, engine }: Props) {
           <button
             onClick={submit}
             disabled={!value.trim() || isStreaming}
-            aria-label="Send"
             className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center transition-all duration-150
                        bg-[#0D0D0D] text-white disabled:opacity-25 hover:enabled:bg-[#2A2A2A] active:enabled:scale-95"
           >
@@ -76,11 +64,7 @@ export default function InputBar({ onSubmit, isStreaming, engine }: Props) {
             )}
           </button>
         </div>
-
-        {/* Footer hint */}
-        <p className="text-[11px] text-[#BBB] text-center mt-2">
-          {engineLabel} · Shift+Enter for new line
-        </p>
+        <p className="text-[11px] text-[#BBB] text-center mt-2">Shift+Enter for new line</p>
       </div>
     </div>
   )
