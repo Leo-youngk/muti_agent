@@ -1,0 +1,20 @@
+fastapi>=0.111.0
+uvicorn[standard]>=0.29.0
+sse-starlette>=2.1.0
+pydantic>=2.7.0
+python-dotenv>=1.0.0
+httpx>=0.27.0
+
+# LangGraph engine
+langchain>=0.2.0
+langchain-openai>=0.1.8
+langgraph>=0.1.19
+
+# AutoGen engine (0.7+ new API)
+pyautogen>=0.10.0
+autogen-agentchat>=0.7.5
+autogen-ext[openai]>=0.7.5
+
+# Frontend
+streamlit>=1.35.0
+requests>=2.31.0
