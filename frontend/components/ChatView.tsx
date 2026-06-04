@@ -2,7 +2,10 @@
 
 import { useEffect, useRef } from 'react'
 import type { Message } from '@/lib/types'
-import AgentCard from './AgentCard'
+import { ADVISORS } from '@/lib/advisors'
+import type { AdvisorId } from '@/lib/types'
+import AdvisorCard from './AdvisorCard'
+import ConclusionSection from './ConclusionSection'
 
 interface Props {
   messages: Message[]
@@ -18,26 +21,28 @@ export default function ChatView({ messages }: Props) {
   if (messages.length === 0) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center text-center px-6 select-none">
-        <div
-          className="w-14 h-14 rounded-2xl flex items-center justify-center mb-5 text-2xl"
-          style={{ background: '#F0F0F0' }}
-        >
-          🤖
+        <div className="w-14 h-14 rounded-2xl bg-[#F0F0F0] flex items-center justify-center mb-5 text-2xl">
+          🎯
         </div>
-        <h2 className="text-xl font-semibold text-[#0D0D0D] mb-2 tracking-tight">
-          What can I help with?
-        </h2>
-        <p className="text-sm text-[#999] max-w-sm leading-relaxed">
-          Describe your task below. Three AI agents — Researcher, Critic, and Synthesizer —
-          will collaborate and stream their responses in real time.
+        <h2 className="text-xl font-semibold text-[#0D0D0D] mb-3 tracking-tight">顾问团</h2>
+        <p className="text-sm text-[#999] max-w-sm leading-relaxed mb-5">
+          输入一个问题，让六位顾问各自判断，再由主持人分析分歧。
         </p>
+        <div className="flex flex-wrap justify-center gap-2">
+          {ADVISORS.map(a => (
+            <span key={a.id} className="text-xs px-2.5 py-1 rounded-full border font-medium"
+              style={{ borderColor: `${a.color}44`, color: a.color, background: `${a.color}0D` }}>
+              {a.icon} {a.name}
+            </span>
+          ))}
+        </div>
       </div>
     )
   }
 
   return (
     <div className="flex-1 overflow-y-auto">
-      <div className="max-w-3xl mx-auto px-6 py-8 space-y-6">
+      <div className="max-w-3xl mx-auto px-6 py-8 space-y-8">
         {messages.map(msg => {
           if (msg.role === 'user') {
             return (
@@ -48,9 +53,28 @@ export default function ChatView({ messages }: Props) {
               </div>
             )
           }
-          if (msg.role === 'agent') {
-            return <AgentCard key={msg.id} message={msg} />
+
+          if (msg.role === 'panel' && msg.panel) {
+            const { judgments, advisorStatus, analysis, analysisStatus } = msg.panel
+            return (
+              <div key={msg.id} className="space-y-4">
+                {/* 六张顾问卡片 */}
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  {ADVISORS.map(a => (
+                    <AdvisorCard
+                      key={a.id}
+                      advisorId={a.id as AdvisorId}
+                      status={advisorStatus[a.id as AdvisorId]}
+                      judgment={judgments[a.id as AdvisorId]}
+                    />
+                  ))}
+                </div>
+                {/* 分歧 + 结论 */}
+                <ConclusionSection analysis={analysis} status={analysisStatus} />
+              </div>
+            )
           }
+
           return null
         })}
         <div ref={bottomRef} />
