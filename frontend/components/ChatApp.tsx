@@ -34,9 +34,23 @@ function buildHistory(messages: Message[]): HistoryMessage[] {
   for (const msg of messages) {
     if (msg.role === 'user') {
       result.push({ role: 'user', content: msg.content })
-    } else if (msg.role === 'panel' && msg.panel?.analysis) {
-      const { verdict, top_voices } = msg.panel.analysis.conclusion
-      result.push({ role: 'assistant', content: `[顾问团综合判断] 最值得听：${top_voices.join('、')}。主持人结论：${verdict}` })
+    } else if (msg.role === 'panel' && msg.panel) {
+      const { judgments, analysis } = msg.panel
+      const parts: string[] = []
+
+      // 把所有顾问的立场都放进历史，让下一轮每个顾问知道上一轮大家说了什么
+      const advisorLines = Object.values(judgments)
+        .filter((j): j is AdvisorJudgment => j != null)
+        .map(j => `• ${j.advisor}（${j.stance}）：${j.core_judgment}`)
+      if (advisorLines.length > 0) {
+        parts.push(`[上一轮顾问立场]\n${advisorLines.join('\n')}`)
+      }
+      if (analysis) {
+        parts.push(`[主持人结论] ${analysis.conclusion.verdict}`)
+      }
+      if (parts.length > 0) {
+        result.push({ role: 'assistant', content: parts.join('\n\n') })
+      }
     }
   }
   return result.slice(-6)

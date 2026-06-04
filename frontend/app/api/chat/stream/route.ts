@@ -103,6 +103,43 @@ function parseJSON<T>(text: string): T | null {
   return null
 }
 
+/**
+ * 当 JSON 无法完整解析时（超时截断 / 格式错误），
+ * 用正则从已有文本里抢救出关键字段，至少保留核心判断。
+ */
+function extractPartialAdvisorJudgment(
+  text: string,
+  fallbackName: string
+): AdvisorJudgment | null {
+  const get = (key: string): string => {
+    // 匹配 "key": "value"，value 允许内部有转义字符
+    const m = text.match(new RegExp(`"${key}"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)`))
+    if (!m) return ''
+    return m[1].replace(/\\n/g, '\n').replace(/\\"/g, '"').replace(/\\t/g, ' ')
+  }
+
+  const core = get('core_judgment')
+  if (!core) return null   // 连核心判断都没有，真的没办法了
+
+  const rawStance = get('stance')
+  const validStances = ['支持', '反对', '有条件支持', '需要更多信息'] as const
+  const stance = (validStances as readonly string[]).includes(rawStance)
+    ? rawStance as AdvisorJudgment['stance']
+    : '需要更多信息'
+
+  return {
+    advisor:       get('advisor') || fallbackName,
+    stance,
+    core_judgment: core,
+    reasoning:     get('reasoning') || '（输出被中断，无法获取完整推理）',
+    focus:         get('focus')     || '—',
+    criticism:     get('criticism') || '（未能完整生成）',
+    demand:        get('demand')    || '—',
+    approach:      get('approach')  || '—',
+    blind_spot:    get('blind_spot')|| '—',
+  }
+}
+
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
 
 // ─── Route Handler ─────────────────────────────────────────────────────────────
@@ -161,34 +198,54 @@ export async function POST(request: Request) {
         const advisorId = advisor.id as AdvisorId
         send({ event: 'advisor_start', advisorId })
 
-        // 优先使用用户自定义档案
         const profile = customProfiles[advisorId] || advisor.profile
         const userContent = userMsgPrefix ? `${userMsgPrefix}\n${task}` : task
 
         for (let attempt = 0; attempt <= 2; attempt++) {
           if (attempt > 0) await sleep(600 * attempt)
+
+          // 每次调用独立的 30s 超时，防止单个顾问卡住拖垮全局
+          const perCallAbort = new AbortController()
+          const timeoutId = setTimeout(() => perCallAbort.abort('per-advisor-timeout'), 30_000)
+          let accumulated = ''
+
           try {
-            const stream = await client.chat.completions.create({
-              model, temperature: 0.85, stream: true,
-              messages: [
-                { role: 'system', content: buildAdvisorSystemPrompt(profile) },
-                ...history.map(h => ({ role: h.role as 'user' | 'assistant', content: h.content })),
-                { role: 'user', content: userContent },
-              ],
-            })
-            let accumulated = ''
+            const stream = await client.chat.completions.create(
+              {
+                model, temperature: 0.85, stream: true,
+                messages: [
+                  { role: 'system', content: buildAdvisorSystemPrompt(profile) },
+                  ...history.map(h => ({ role: h.role as 'user' | 'assistant', content: h.content })),
+                  { role: 'user', content: userContent },
+                ],
+              },
+              { signal: perCallAbort.signal }
+            )
+
             for await (const chunk of stream) {
               const token = chunk.choices[0]?.delta?.content ?? ''
               if (token) { accumulated += token; send({ event: 'advisor_token', advisorId, token }) }
             }
+
+            clearTimeout(timeoutId)
             const judgment = parseJSON<AdvisorJudgment>(accumulated)
+              ?? extractPartialAdvisorJudgment(accumulated, advisor.name)
             send({ event: 'advisor_complete', advisorId, judgment })
             return judgment
-          } catch (err) {
-            if (attempt === 2) {
-              send({ event: 'advisor_complete', advisorId, judgment: null, error: String(err) })
-              return null
+          } catch (err: unknown) {
+            clearTimeout(timeoutId)
+            const isTimeout = perCallAbort.signal.aborted
+            const isLastAttempt = attempt === 2
+
+            if (isTimeout || isLastAttempt) {
+              // 超时时尝试用已累积文本救出部分内容
+              const salvaged = parseJSON<AdvisorJudgment>(accumulated)
+                ?? extractPartialAdvisorJudgment(accumulated, advisor.name)
+              send({ event: 'advisor_complete', advisorId, judgment: salvaged,
+                error: isTimeout ? `超时（已累积 ${accumulated.length} 字符）` : String(err) })
+              return salvaged
             }
+            // 还有重试机会，继续
           }
         }
         return null
