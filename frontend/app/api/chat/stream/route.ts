@@ -136,6 +136,8 @@ export async function POST(request: Request) {
   let body: {
     task?: string
     history?: HistoryMessage[]
+    /** 前端选择的模型，优先级高于环境变量 */
+    model?: string
     /** 追问模式：只回答这一个顾问 */
     targetAdvisor?: AdvisorId
     /** 追问模式：上一轮所有顾问的判断，用于注入上下文 */
@@ -145,6 +147,9 @@ export async function POST(request: Request) {
 
   const task: string = (body.task ?? '').trim()
   if (!task) return Response.json({ error: 'Task cannot be empty.' }, { status: 422 })
+
+  // 前端传入的模型优先，其次环境变量，最后默认值
+  const resolvedModel = (body.model?.trim() || model)
 
   const history: HistoryMessage[] = (body.history ?? []).slice(-6)
   const targetAdvisor = body.targetAdvisor ?? null
@@ -171,7 +176,7 @@ export async function POST(request: Request) {
           if (attempt > 0) await sleep(600 * attempt)
           try {
             const stream = await client.chat.completions.create({
-              model,
+              model: resolvedModel,
               temperature: 0.85,
               stream: true,
               messages: [
@@ -234,7 +239,7 @@ export async function POST(request: Request) {
             if (attempt > 0) await sleep(600 * attempt)
             try {
               const analysisStream = await client.chat.completions.create({
-                model, temperature: 0.7, stream: true,
+                model: resolvedModel, temperature: 0.7, stream: true,
                 messages: [
                   { role: 'system', content: buildCrossAnalysisPrompt(judgmentsText) },
                   { role: 'user', content: `用户问题：${task}` },

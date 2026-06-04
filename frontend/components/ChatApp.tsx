@@ -1,10 +1,11 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import { v4 as uuidv4 } from 'uuid'
 import Sidebar from '@/components/Sidebar'
 import ChatView from '@/components/ChatView'
 import InputBar from '@/components/InputBar'
+import ModelSelector from '@/components/ModelSelector'
 import type {
   Message,
   Thread,
@@ -68,6 +69,15 @@ export default function ChatApp() {
   const [error, setError] = useState<string | null>(null)
   /** 追问目标顾问 ID，null 表示全团模式 */
   const [targetAdvisor, setTargetAdvisor] = useState<AdvisorId | null>(null)
+  /** 当前选择的模型，localStorage 持久化 */
+  const [selectedModel, setSelectedModel] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('advisor_model') || 'deepseek-v4-flash'
+    }
+    return 'deepseek-v4-flash'
+  })
+  /** 用于中止当前流式请求 */
+  const abortControllerRef = useRef<AbortController | null>(null)
 
   const activeThread = threads.find(t => t.id === activeId) ?? threads[0]
 
@@ -92,6 +102,15 @@ export default function ChatApp() {
     setThreads(prev => [t, ...prev])
     setActiveId(t.id)
     setTargetAdvisor(null)
+  }, [])
+
+  const handleModelChange = useCallback((m: string) => {
+    setSelectedModel(m)
+    if (typeof window !== 'undefined') localStorage.setItem('advisor_model', m)
+  }, [])
+
+  const handleStop = useCallback(() => {
+    abortControllerRef.current?.abort()
   }, [])
 
   const handleFollowUp = useCallback((advisorId: AdvisorId) => {
@@ -134,13 +153,18 @@ export default function ChatApp() {
     setTargetAdvisor(null)
 
     try {
+      const controller = new AbortController()
+      abortControllerRef.current = controller
+
       const res = await fetch('/api/chat/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
         body: JSON.stringify({
           task,
           thread_id: tid,
           history,
+          model: selectedModel,
           targetAdvisor: capturedTarget ?? undefined,
           previousJudgments: previousJudgments.length > 0 ? previousJudgments : undefined,
         }),
@@ -213,7 +237,14 @@ export default function ChatApp() {
         }
       }
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : String(e))
+      // AbortError 是用户主动停止，不显示错误
+      if (e instanceof Error && e.name === 'AbortError') {
+        // 正常中止，无需处理
+      } else {
+        setError(e instanceof Error ? e.message : String(e))
+      }
+    } finally {
+      abortControllerRef.current = null
     }
 
     setIsStreaming(false)
@@ -223,11 +254,16 @@ export default function ChatApp() {
     <div className="flex h-screen overflow-hidden bg-white">
       <Sidebar threads={threads} activeId={activeId} onSelectThread={setActiveId} onNewThread={newThread} />
       <main className="flex flex-col flex-1 min-w-0 overflow-hidden">
-        <header className="h-14 shrink-0 border-b border-[#EBEBEB] flex items-center px-6">
+        <header className="h-14 shrink-0 border-b border-[#EBEBEB] flex items-center justify-between px-6">
           <span className="text-sm font-medium text-[#555]">
             顾问团 &middot; Thread{' '}
             <code className="bg-[#F0F0F0] rounded px-1.5 py-0.5 text-xs text-[#333]">{activeId}</code>
           </span>
+          <ModelSelector
+            value={selectedModel}
+            onChange={handleModelChange}
+            disabled={isStreaming}
+          />
         </header>
 
         {error && (
@@ -246,6 +282,7 @@ export default function ChatApp() {
         <InputBar
           onSubmit={handleSubmit}
           isStreaming={isStreaming}
+          onStop={handleStop}
           targetAdvisor={targetAdvisor}
           onClearTarget={() => setTargetAdvisor(null)}
         />

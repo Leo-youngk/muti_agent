@@ -7,12 +7,14 @@ import { ADVISOR_MAP } from '@/lib/advisors'
 interface Props {
   onSubmit: (task: string) => void
   isStreaming: boolean
+  /** 点击停止当前流式请求 */
+  onStop?: () => void
   /** 当前选中的追问顾问，null 表示全团模式 */
   targetAdvisor?: AdvisorId | null
   onClearTarget?: () => void
 }
 
-export default function InputBar({ onSubmit, isStreaming, targetAdvisor, onClearTarget }: Props) {
+export default function InputBar({ onSubmit, isStreaming, onStop, targetAdvisor, onClearTarget }: Props) {
   const [value, setValue] = useState('')
   const ref = useRef<HTMLTextAreaElement>(null)
 
@@ -89,16 +91,17 @@ export default function InputBar({ onSubmit, isStreaming, targetAdvisor, onClear
                        placeholder-[#AAA] leading-relaxed max-h-48 disabled:cursor-not-allowed"
           />
           <button
-            onClick={submit}
-            disabled={!value.trim() || isStreaming}
+            onClick={isStreaming ? onStop : submit}
+            disabled={isStreaming ? false : !value.trim()}
             className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center transition-all duration-150
                        text-white disabled:opacity-25 hover:enabled:opacity-80 active:enabled:scale-95"
             style={{ background: isFollowUpMode && targetMeta ? targetMeta.color : '#0D0D0D' }}
+            title={isStreaming ? '停止' : '发送'}
           >
             {isStreaming ? (
-              <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              /* 停止按钮 ◼ */
+              <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
+                <rect x="4" y="4" width="16" height="16" rx="2" />
               </svg>
             ) : (
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
