@@ -105,12 +105,12 @@ export default function ChatView({ messages, onFollowUp, onRegenerate, onExample
               const { judgments, advisorStatus, analysis, analysisStatus, streamingTexts, analysisStream } = msg.panel
               const activeAdvisors = ADVISORS.filter(a => advisorStatus[a.id as AdvisorId] !== 'idle')
               const isLastPanel = msg === panelMessages.at(-1)
-              const isThisFollowUp = !!(msg as any).followUpMeta
+              const isThisFollowUp = !!msg.followUpMeta
 
               return (
                 <div key={msg.id} className="space-y-4">
                   {/* 追问标签 */}
-                  {isThisFollowUp && (msg as any).followUpMeta && (
+                  {isThisFollowUp && msg.followUpMeta && (
                     <div className="flex items-center gap-2 text-xs text-[#BBB]">
                       <span className="w-4 h-px bg-[#E0E0E0]" />
                       追问模式

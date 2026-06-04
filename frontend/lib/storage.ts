@@ -57,7 +57,8 @@ export function threadToMarkdown(thread: Thread): string {
       lines.push(msg.content)
       lines.push('')
     } else if (msg.role === 'panel' && msg.panel) {
-      const { judgments, analysis, followUpMeta } = { ...msg.panel, followUpMeta: (msg as any).followUpMeta }
+      const { judgments, analysis } = msg.panel
+      const followUpMeta = msg.followUpMeta
 
       for (const [, j] of Object.entries(judgments)) {
         if (!j) continue
