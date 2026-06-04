@@ -7,14 +7,14 @@ export const maxDuration = 120
 
 // ─── Prompt 构建 ───────────────────────────────────────────────────────────────
 
-function buildAdvisorSystemPrompt(profile: string, followUpContext?: string): string {
+function buildAdvisorSystemPrompt(profile: string): string {
   return `你是一个人物思维模拟系统。你的任务是深度还原以下人物面对一个具体问题时的判断方式。
 
 你不是在"给建议"，你是在模拟这个人——用他的优先级、他的偏好、他的批评习惯、他的盲点来思考这个问题。
 
 === 人物档案 ===
 ${profile}
-=== 档案结束 ===${followUpContext ? `\n\n${followUpContext}` : ''}
+=== 档案结束 ===
 
 要求：
 1. 你的判断必须有明确立场：支持、反对、或有条件支持。不允许"既有机会也有风险"式的骑墙。
@@ -39,8 +39,12 @@ ${profile}
 }`
 }
 
-/** 为追问模式构建"其他顾问观点摘要"上下文 */
-function buildFollowUpContext(
+/**
+ * 追问模式：构建注入到用户消息最前面的上下文前缀。
+ * 刻意不放进 system prompt——避免模型把背景当主题来回答，
+ * 而是把用户的新问题当主题，背景只是参考。
+ */
+function buildFollowUpPrefix(
   previousJudgments: PreviousJudgment[],
   targetId: AdvisorId
 ): string {
@@ -48,16 +52,10 @@ function buildFollowUpContext(
   if (others.length === 0) return ''
 
   const lines = others.map(({ judgment }) =>
-    `• ${judgment.advisor || '未知'}（${judgment.stance}）：${judgment.core_judgment}\n  批评：${judgment.criticism}`
+    `- ${judgment.advisor || targetId}（${judgment.stance}）：${judgment.core_judgment}`
   ).join('\n')
 
-  return `=== 追问背景：本轮其他顾问的立场 ===
-${lines}
-=== 背景结束 ===
-
-这是一个追问对话。用户在看过所有顾问判断后，特别选择了你进行深入追问。
-你可以：（1）回应或反驳上面某位顾问的观点；（2）深入展开你的某个核心判断；（3）提供其他顾问忽视的新视角。
-判断要比第一轮更有深度，更具体。`
+  return `[参考背景：上一轮其他顾问的立场]\n${lines}\n[以上仅供你在回答时参考，请优先完整回答用户的新问题]\n---`
 }
 
 function buildCrossAnalysisPrompt(judgmentsText: string): string {
@@ -164,13 +162,18 @@ export async function POST(request: Request) {
         try { controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`)) } catch {}
       }
 
-      /** 调用单个顾问，含 token 流 + 重试 */
+      /** 调用单个顾问，含 token 流 + 重试
+       *  @param userMsgPrefix 追问模式下前置到用户消息的参考背景（不进入 system prompt）
+       */
       async function runAdvisor(
         advisor: typeof ADVISORS[0],
-        extraSystemContent?: string
+        userMsgPrefix?: string
       ): Promise<AdvisorJudgment | null> {
         const advisorId = advisor.id as AdvisorId
         send({ event: 'advisor_start', advisorId })
+
+        // 追问模式：把背景前缀拼到用户消息里，让模型清楚知道新问题是主体
+        const userContent = userMsgPrefix ? `${userMsgPrefix}\n${task}` : task
 
         for (let attempt = 0; attempt <= 2; attempt++) {
           if (attempt > 0) await sleep(600 * attempt)
@@ -180,9 +183,9 @@ export async function POST(request: Request) {
               temperature: 0.85,
               stream: true,
               messages: [
-                { role: 'system', content: buildAdvisorSystemPrompt(advisor.profile, extraSystemContent) },
+                { role: 'system', content: buildAdvisorSystemPrompt(advisor.profile) },
                 ...history.map(h => ({ role: h.role as 'user' | 'assistant', content: h.content })),
-                { role: 'user', content: task },
+                { role: 'user', content: userContent },
               ],
             })
 
@@ -213,8 +216,8 @@ export async function POST(request: Request) {
         if (targetAdvisor) {
           const advisor = ADVISORS.find(a => a.id === targetAdvisor)
           if (advisor) {
-            const followUpContext = buildFollowUpContext(previousJudgments, targetAdvisor)
-            await runAdvisor(advisor, followUpContext || undefined)
+            const prefix = buildFollowUpPrefix(previousJudgments, targetAdvisor)
+            await runAdvisor(advisor, prefix || undefined)
           }
           send({ event: 'complete' })
           return
