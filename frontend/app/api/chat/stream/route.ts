@@ -20,10 +20,16 @@ export async function POST(request: Request) {
     return Response.json({ error: 'OPENAI_API_KEY is not configured.' }, { status: 400 })
   }
 
-  // 支持自定义 base URL（如 opencode.ai、DeepSeek 等兼容 OpenAI 接口的服务商）
-  const baseURL = process.env.OPENAI_BASE_URL ?? undefined
-  // 支持自定义模型名
-  const model = process.env.AI_MODEL ?? 'gpt-4o'
+  const rawBase = process.env.OPENAI_BASE_URL?.trim()
+  const baseURL = rawBase || undefined
+  const model   = process.env.AI_MODEL?.trim() || 'gpt-4o'
+
+  // 验证 baseURL 格式
+  if (baseURL) {
+    try { new URL(baseURL) } catch {
+      return Response.json({ error: `Invalid OPENAI_BASE_URL: "${baseURL}"` }, { status: 500 })
+    }
+  }
 
   const body = await request.json().catch(() => ({}))
   const task: string = body.task ?? ''
@@ -31,7 +37,7 @@ export async function POST(request: Request) {
     return Response.json({ error: 'Task cannot be empty.' }, { status: 422 })
   }
 
-  const client = new OpenAI({ apiKey, ...(baseURL ? { baseURL } : {}) })
+  const client = new OpenAI({ apiKey: apiKey.trim(), baseURL })
   const encoder = new TextEncoder()
 
   const stream = new ReadableStream({
