@@ -2,8 +2,8 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { v4 as uuidv4 } from 'uuid'
-import type { Message, Thread, PanelResult, AdvisorId, AppSettings } from './types'
-import { ADVISORS } from './advisors'
+import type { Message, Thread, PanelResult, AppSettings } from './types'
+import type { AdvisorMeta } from './advisors'
 import { loadThreadsSync, saveThreads } from './storage'
 
 // ─── 工厂函数 ─────────────────────────────────────────────────────────────────
@@ -12,10 +12,11 @@ export function makeThread(): Thread {
   return { id: uuidv4().slice(0, 8), title: '新问题', messages: [], createdAt: Date.now() }
 }
 
-export function makeInitialPanel(): PanelResult {
+/** activeAdvisors：本次提问的顾问列表（从 settings 计算得出）*/
+export function makeInitialPanel(activeAdvisors: AdvisorMeta[]): PanelResult {
   const advisorStatus = Object.fromEntries(
-    ADVISORS.map(a => [a.id, 'idle' as const])
-  ) as Record<AdvisorId, 'idle'>
+    activeAdvisors.map(a => [a.id, 'idle' as const])
+  ) as Record<string, 'idle'>
   return { judgments: {}, advisorStatus, streamingTexts: {}, analysisStatus: 'idle', analysisStream: '' }
 }
 

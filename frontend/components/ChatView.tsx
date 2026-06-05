@@ -2,8 +2,8 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react'
 import type { Message } from '@/lib/types'
-import { ADVISORS } from '@/lib/advisors'
 import type { AdvisorId } from '@/lib/types'
+import { useAdvisorMap } from '@/lib/AdvisorContext'
 import AdvisorCard from './AdvisorCard'
 import ConclusionSection from './ConclusionSection'
 
@@ -23,6 +23,10 @@ interface Props {
 }
 
 export default function ChatView({ messages, onFollowUp, onRegenerate, onRetryAdvisor, onExamplePrompt, isStreaming }: Props) {
+  const advisorMap = useAdvisorMap()
+  // activeAdvisors: all advisors (from context) — used for the empty state badges
+  const allAdvisors = Object.values(advisorMap)
+
   const bottomRef = useRef<HTMLDivElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const [showScrollBtn, setShowScrollBtn] = useState(false)
@@ -53,7 +57,7 @@ export default function ChatView({ messages, onFollowUp, onRegenerate, onRetryAd
           输入一个问题，让四位顾问各自判断，再由主持人分析分歧。
         </p>
         <div className="flex flex-wrap justify-center gap-2 mb-6">
-          {ADVISORS.map(a => (
+          {allAdvisors.map(a => (
             <span key={a.id} className="text-xs px-2.5 py-1 rounded-full border font-medium"
               style={{ borderColor: `${a.color}44`, color: a.color, background: `${a.color}0D` }}>
               {a.icon} {a.name}
@@ -101,7 +105,10 @@ export default function ChatView({ messages, onFollowUp, onRegenerate, onRetryAd
 
             if (msg.role === 'panel' && msg.panel) {
               const { judgments, advisorStatus, analysis, analysisStatus, streamingTexts, analysisStream } = msg.panel
-              const activeAdvisors = ADVISORS.filter(a => advisorStatus[a.id as AdvisorId] !== 'idle')
+              // Show advisors that are in the panel (status !== 'idle'), looked up from context
+              const activeAdvisors = Object.values(advisorMap).filter(
+                a => advisorStatus[a.id] !== undefined && advisorStatus[a.id] !== 'idle'
+              )
               const isLastPanel = msg === panelMessages.at(-1)
               const isThisFollowUp = !!msg.followUpMeta
 

@@ -1,5 +1,11 @@
 export type Stance = '支持' | '反对' | '有条件支持' | '需要更多信息'
-export type AdvisorId = 'jobs' | 'musk' | 'buffett' | 'munger'
+
+/** 内置顾问的固定 ID */
+export type BuiltinAdvisorId = 'jobs' | 'musk' | 'buffett' | 'munger'
+
+/** 顾问 ID 可以是内置 ID 或用户自定义 ID（字符串）*/
+export type AdvisorId = string
+
 export type AdvisorStatus = 'idle' | 'thinking' | 'done' | 'error'
 
 export interface AdvisorJudgment {
@@ -41,13 +47,11 @@ export interface CrossAnalysis {
 }
 
 export interface PanelResult {
-  judgments: Partial<Record<AdvisorId, AdvisorJudgment>>
-  advisorStatus: Record<AdvisorId, AdvisorStatus>
-  /** 每个顾问的 token 流累积文本 */
-  streamingTexts: Partial<Record<AdvisorId, string>>
+  judgments: Record<string, AdvisorJudgment | undefined>
+  advisorStatus: Record<string, AdvisorStatus>
+  streamingTexts: Record<string, string | undefined>
   analysis?: CrossAnalysis
   analysisStatus: 'idle' | 'thinking' | 'done'
-  /** 分析阶段的 token 流累积文本 */
   analysisStream: string
 }
 
@@ -56,7 +60,6 @@ export interface Message {
   role: 'user' | 'panel'
   content: string
   panel?: PanelResult
-  /** 如果这是一条追问消息，记录追问的目标顾问 */
   followUpMeta?: FollowUpMeta
 }
 
@@ -67,31 +70,42 @@ export interface Thread {
   createdAt: number
 }
 
-/** 用户可配置的全局设置，存储在 localStorage */
+/** 用户自定义的顾问 */
+export interface CustomAdvisor {
+  id: string
+  name: string
+  nameEn: string
+  color: string
+  icon: string
+  tagline: string
+  profile: string
+}
+
+/** 用户可配置的全局设置 */
 export interface AppSettings {
   apiKey: string
   baseUrl: string
   defaultModel: string
-  /** 顾问档案自定义（为空字符串时使用内置默认值）*/
-  customProfiles: Partial<Record<AdvisorId, string>>
+  /** 覆盖内置顾问的思维档案 */
+  customProfiles: Partial<Record<BuiltinAdvisorId, string>>
+  /** 用户新增的自定义顾问 */
+  customAdvisors: CustomAdvisor[]
+  /** 从面板中隐藏的顾问 ID（内置 + 自定义均可） */
+  hiddenAdvisors: string[]
 }
 
-/** 用于传递给后端的对话历史 */
 export interface HistoryMessage {
   role: 'user' | 'assistant'
   content: string
 }
 
-/** 追问模式：传给后端的上一轮顾问判断 */
 export interface PreviousJudgment {
   advisorId: AdvisorId
   judgment: AdvisorJudgment
 }
 
-/** 消息的追问上下文标记 */
 export interface FollowUpMeta {
   targetAdvisorId: AdvisorId
-  /** 是否是追问模式（区别于全团模式） */
   isFollowUp: true
 }
 
@@ -105,8 +119,7 @@ export interface StreamEvent {
     | 'analysis_complete'
     | 'complete'
     | 'error'
-  advisorId?: AdvisorId
-  /** advisor_token / analysis_token 的单个 chunk */
+  advisorId?: string
   token?: string
   judgment?: AdvisorJudgment | null
   analysis?: CrossAnalysis | null

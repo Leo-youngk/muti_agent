@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react'
 import type { Thread } from '@/lib/types'
-import { ADVISORS } from '@/lib/advisors'
+import { useAdvisorMap } from '@/lib/AdvisorContext'
 
 interface Props {
   threads: Thread[]
@@ -18,6 +18,7 @@ export default function Sidebar({
   threads, activeId, onSelectThread, onNewThread,
   onDeleteThread, onRenameThread, onClose,
 }: Props) {
+  const advisorMap = useAdvisorMap()
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editingTitle, setEditingTitle] = useState('')
   const [hoveredId, setHoveredId] = useState<string | null>(null)
@@ -148,7 +149,7 @@ export default function Sidebar({
       <div className="px-4 py-4 border-t border-[#EBEBEB]">
         <p className="text-[10px] font-semibold uppercase tracking-widest text-[#999] mb-2.5">顾问</p>
         <div className="space-y-2">
-          {ADVISORS.map(a => (
+          {Object.values(advisorMap).map(a => (
             <div key={a.id} className="flex items-center gap-2.5">
               <span className="text-sm font-bold shrink-0" style={{ color: a.color }}>{a.icon}</span>
               <div>

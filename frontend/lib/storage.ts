@@ -81,6 +81,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   baseUrl: '',
   defaultModel: 'deepseek-v4-flash',
   customProfiles: {},
+  customAdvisors: [],
+  hiddenAdvisors: [],
 }
 
 export function loadSettings(): AppSettings {

@@ -4,8 +4,8 @@ import { useState, useMemo } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { AdvisorJudgment, AdvisorStatus } from '@/lib/types'
-import { ADVISOR_MAP } from '@/lib/advisors'
 import type { AdvisorId } from '@/lib/types'
+import { useAdvisorMeta } from '@/lib/AdvisorContext'
 import { useCopy } from '@/lib/hooks'
 import { extractStreamingFields } from '@/lib/parseStreaming'
 
@@ -29,7 +29,7 @@ const STANCE_STYLE: Record<string, { label: string; color: string; bg: string }>
 export default function AdvisorCard({ advisorId, status, judgment, streamingText, onFollowUp, onRetry, isFollowUpTarget }: Props) {
   const [expanded, setExpanded] = useState(false)
   const { copied, copy } = useCopy()
-  const meta = ADVISOR_MAP[advisorId]
+  const meta = useAdvisorMeta(advisorId)
 
   // ── 流式阶段：实时提取已完成的字段 ──
   const streamFields = useMemo(() => {

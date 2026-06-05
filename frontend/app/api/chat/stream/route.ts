@@ -1,6 +1,7 @@
 import OpenAI from 'openai'
-import { ADVISORS } from '@/lib/advisors'
-import type { AdvisorId, AdvisorJudgment, CrossAnalysis, HistoryMessage, PreviousJudgment } from '@/lib/types'
+import { ADVISORS, getAllAdvisors } from '@/lib/advisors'
+import type { AdvisorMeta } from '@/lib/advisors'
+import type { AdvisorId, AdvisorJudgment, CrossAnalysis, HistoryMessage, PreviousJudgment, CustomAdvisor } from '@/lib/types'
 
 export const runtime = 'nodejs'
 export const maxDuration = 120
@@ -146,11 +147,14 @@ export async function POST(request: Request) {
     model?: string
     clientApiKey?: string
     clientBaseUrl?: string
-    customProfiles?: Partial<Record<AdvisorId, string>>
+    customProfiles?: Partial<Record<string, string>>
     targetAdvisor?: AdvisorId
     previousJudgments?: PreviousJudgment[]
-    /** 追问后是否也触发交叉分析 */
     followUpAnalysis?: boolean
+    /** 用户新增的自定义顾问 */
+    customAdvisors?: CustomAdvisor[]
+    /** 隐藏的顾问 ID */
+    hiddenAdvisors?: string[]
   }
   try { body = await request.json() } catch { body = {} }
 
@@ -173,8 +177,14 @@ export async function POST(request: Request) {
   const history: HistoryMessage[] = (body.history ?? []).slice(-6)
   const targetAdvisor = body.targetAdvisor ?? null
   const previousJudgments: PreviousJudgment[] = body.previousJudgments ?? []
-  const customProfiles: Partial<Record<AdvisorId, string>> = body.customProfiles ?? {}
+  const customProfiles: Partial<Record<string, string>> = body.customProfiles ?? {}
   const followUpAnalysis = body.followUpAnalysis ?? false
+
+  // ── 构建本次请求的顾问列表（内置 + 自定义，去除隐藏）──
+  const activeAdvisors: AdvisorMeta[] = getAllAdvisors({
+    customAdvisors: body.customAdvisors ?? [],
+    hiddenAdvisors: body.hiddenAdvisors ?? [],
+  })
 
   const client = new OpenAI({ apiKey, baseURL })
   const encoder = new TextEncoder()
@@ -252,7 +262,7 @@ export async function POST(request: Request) {
       }
 
       async function runCrossAnalysis(
-        completedJudgments: Partial<Record<AdvisorId, AdvisorJudgment>>
+        completedJudgments: Record<string, AdvisorJudgment>
       ) {
         const validEntries = Object.entries(completedJudgments).filter(([, j]) => j != null)
         if (validEntries.length === 0) return
@@ -287,18 +297,17 @@ export async function POST(request: Request) {
       try {
         // ── 追问模式 ──────────────────────────────────────────────────────
         if (targetAdvisor) {
-          const advisor = ADVISORS.find(a => a.id === targetAdvisor)
+          const advisor = activeAdvisors.find(a => a.id === targetAdvisor)
           if (advisor) {
             const prefix = buildFollowUpPrefix(previousJudgments, targetAdvisor)
             const judgment = await runAdvisor(advisor, prefix || undefined)
 
-            // 追问后也可以触发交叉分析（使用上一轮判断 + 本轮追问结果）
             if (followUpAnalysis && judgment) {
-              const allJudgments: Partial<Record<AdvisorId, AdvisorJudgment>> = {}
+              const allJudgments: Record<string, AdvisorJudgment> = {}
               for (const pj of previousJudgments) {
                 allJudgments[pj.advisorId] = pj.judgment
               }
-              allJudgments[targetAdvisor] = judgment  // 用追问后的新回答覆盖
+              allJudgments[targetAdvisor] = judgment
               await runCrossAnalysis(allJudgments)
             }
           }
@@ -307,32 +316,28 @@ export async function POST(request: Request) {
         }
 
         // ── 全团模式（并行调用 + 交叉分析不等最慢顾问）──────────────────
-        const completedJudgments: Partial<Record<AdvisorId, AdvisorJudgment>> = {}
+        const completedJudgments: Record<string, AdvisorJudgment> = {}
         let doneCount = 0
-        const total = ADVISORS.length
-        // 3/4 完成后启动倒计时：再等最多 8s，超时就用已有结果开始分析
-        const FAST_THRESHOLD = Math.max(1, total - 1)  // 3
+        const total = activeAdvisors.length
+        const FAST_THRESHOLD = Math.max(1, total - 1)
         const STRAGGLER_TIMEOUT = 8_000
 
         let analysisResolve: (() => void) | null = null
         const analysisGate = new Promise<void>(r => { analysisResolve = r })
 
         // 并行发起所有顾问调用
-        const advisorPromises = ADVISORS.map(async (advisor) => {
+        const advisorPromises = activeAdvisors.map(async (advisor) => {
           const judgment = await runAdvisor(advisor)
-          if (judgment) completedJudgments[advisor.id as AdvisorId] = judgment
+          if (judgment) completedJudgments[advisor.id] = judgment
           doneCount++
 
-          // 全部完成 → 立即开始分析
           if (doneCount >= total) {
             analysisResolve?.()
-          }
-          // 倒数第二个完成 → 给最后一个限时
-          else if (doneCount >= FAST_THRESHOLD) {
+          } else if (doneCount >= FAST_THRESHOLD) {
             setTimeout(() => analysisResolve?.(), STRAGGLER_TIMEOUT)
           }
 
-          return { advisorId: advisor.id as AdvisorId, judgment }
+          return { advisorId: advisor.id, judgment }
         })
 
         // 等待分析门打开（全部完成 or 3/4完成+8s超时）

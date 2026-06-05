@@ -1,4 +1,4 @@
-import type { AdvisorId } from './types'
+import type { AdvisorId, AppSettings, CustomAdvisor } from './types'
 
 export interface AdvisorMeta {
   id: AdvisorId
@@ -230,6 +230,44 @@ export const ADVISORS: AdvisorMeta[] = [
   },
 ]
 
-export const ADVISOR_MAP: Record<AdvisorId, AdvisorMeta> = Object.fromEntries(
+export const ADVISOR_MAP: Record<string, AdvisorMeta> = Object.fromEntries(
   ADVISORS.map(a => [a.id, a])
-) as Record<AdvisorId, AdvisorMeta>
+)
+
+// ─── 动态顾问列表（内置 + 自定义，过滤隐藏）──────────────────────────────────
+
+/** 将自定义顾问定义转为 AdvisorMeta */
+function customToMeta(ca: CustomAdvisor): AdvisorMeta {
+  return {
+    id: ca.id,
+    name: ca.name,
+    nameEn: ca.nameEn || ca.name,
+    color: ca.color,
+    tagline: ca.tagline || '',
+    icon: ca.icon || '★',
+    profile: ca.profile,
+  }
+}
+
+/** 返回当前设置下的完整顾问列表（内置 + 自定义，排除隐藏）*/
+export function getAllAdvisors(settings: Pick<AppSettings, 'customAdvisors' | 'hiddenAdvisors'>): AdvisorMeta[] {
+  const hidden = new Set(settings.hiddenAdvisors ?? [])
+  const builtins = ADVISORS.filter(a => !hidden.has(a.id))
+  const customs = (settings.customAdvisors ?? [])
+    .filter(ca => !hidden.has(ca.id))
+    .map(customToMeta)
+  return [...builtins, ...customs]
+}
+
+/** 返回 id → meta 映射（内置 + 自定义）*/
+export function getAdvisorMap(settings: Pick<AppSettings, 'customAdvisors' | 'hiddenAdvisors'>): Record<string, AdvisorMeta> {
+  const all = getAllAdvisors(settings)
+  return Object.fromEntries(all.map(a => [a.id, a]))
+}
+
+/** 预设颜色供新顾问选用 */
+export const ADVISOR_COLOR_PRESETS = [
+  '#10B981', '#F97316', '#EC4899', '#6366F1',
+  '#14B8A6', '#84CC16', '#EF4444', '#8B5CF6',
+  '#06B6D4', '#F59E0B', '#E8272A', '#00B4D8',
+]

@@ -3,14 +3,9 @@
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { CrossAnalysis } from '@/lib/types'
-import { ADVISORS } from '@/lib/advisors'
+import { useAdvisorMap } from '@/lib/AdvisorContext'
 import { useCopy } from '@/lib/hooks'
 import DisputeCard from './DisputeCard'
-
-function getColor(name: string): string {
-  const found = ADVISORS.find(a => a.name === name || a.nameEn === name)
-  return found?.color ?? '#888'
-}
 
 function Md({ children, className }: { children: string; className?: string }) {
   return (
@@ -36,6 +31,12 @@ export default function ConclusionSection({
   status: 'idle' | 'thinking' | 'done'
   streamingText?: string
 }) {
+  const advisorMap = useAdvisorMap()
+  const getColor = (name: string): string => {
+    const found = Object.values(advisorMap).find(a => a.name === name || a.nameEn === name)
+    return found?.color ?? '#888'
+  }
+
   const { copied, copy } = useCopy()
 
   const getConclusionText = () => {

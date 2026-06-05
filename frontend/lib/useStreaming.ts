@@ -7,7 +7,7 @@ import type {
   AdvisorJudgment, CrossAnalysis, HistoryMessage, PreviousJudgment,
   FollowUpMeta, AppSettings,
 } from './types'
-import { ADVISORS } from './advisors'
+import type { AdvisorMeta } from './advisors'
 import { makeInitialPanel } from './useThreads'
 
 // ─── 历史构建 ─────────────────────────────────────────────────────────────────
@@ -157,6 +157,8 @@ export function useStreaming(
           customProfiles: Object.keys(settings.customProfiles).length > 0
             ? settings.customProfiles : undefined,
           targetAdvisor: advisorId,
+          customAdvisors: settings.customAdvisors?.length ? settings.customAdvisors : undefined,
+          hiddenAdvisors: settings.hiddenAdvisors?.length ? settings.hiddenAdvisors : undefined,
         }),
       })
 
@@ -214,6 +216,7 @@ export function useStreaming(
     threads: Thread[],
     selectedModel: string,
     settings: AppSettings,
+    activeAdvisors: AdvisorMeta[],
   ) => {
     if (!task.trim() || isStreaming) return
     setError(null)
@@ -232,7 +235,7 @@ export function useStreaming(
       : undefined
     const panelMsg: Message = {
       id: panelMsgId, role: 'panel', content: '',
-      panel: makeInitialPanel(), followUpMeta,
+      panel: makeInitialPanel(activeAdvisors), followUpMeta,
     }
 
     updateThread(tid, t => ({
@@ -265,7 +268,9 @@ export function useStreaming(
             ? settings.customProfiles : undefined,
           targetAdvisor: capturedTarget ?? undefined,
           previousJudgments: previousJudgments.length > 0 ? previousJudgments : undefined,
-          followUpAnalysis: isFollowUp,   // 追问时也触发交叉分析
+          followUpAnalysis: isFollowUp,
+          customAdvisors: settings.customAdvisors?.length ? settings.customAdvisors : undefined,
+          hiddenAdvisors: settings.hiddenAdvisors?.length ? settings.hiddenAdvisors : undefined,
         }),
       })
 
