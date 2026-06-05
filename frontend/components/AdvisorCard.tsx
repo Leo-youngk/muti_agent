@@ -26,18 +26,35 @@ const STANCE_STYLE: Record<string, { label: string; color: string; bg: string }>
   '需要更多信息': { label: '待定',       color: '#6B7280', bg: '#F9FAFB' },
 }
 
-export default function AdvisorCard({ advisorId, status, judgment, streamingText, onFollowUp, onRetry, isFollowUpTarget }: Props) {
+function Md({ children }: { children: string }) {
+  return (
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm]}
+      components={{
+        p: ({ children: c }) => <span>{c}</span>,
+        strong: ({ children: c }) => <strong className="font-semibold">{c}</strong>,
+        ul: ({ children: c }) => <ul className="list-disc pl-4 space-y-0.5">{c}</ul>,
+        ol: ({ children: c }) => <ol className="list-decimal pl-4 space-y-0.5">{c}</ol>,
+        li: ({ children: c }) => <li>{c}</li>,
+      }}
+    >
+      {children}
+    </ReactMarkdown>
+  )
+}
+
+export default function AdvisorCard({
+  advisorId, status, judgment, streamingText, onFollowUp, onRetry, isFollowUpTarget,
+}: Props) {
   const [expanded, setExpanded] = useState(false)
   const { copied, copy } = useCopy()
   const meta = useAdvisorMeta(advisorId)
 
-  // ── 流式阶段：实时提取已完成的字段 ──
   const streamFields = useMemo(() => {
     if (status !== 'thinking' || !streamingText || streamingText.length < 20) return null
     return extractStreamingFields(streamingText)
   }, [status, streamingText])
 
-  // 用最终 judgment（如果已完成）或流式提取的部分字段
   const displayData = judgment ?? streamFields
   const stance = displayData?.stance
     ? (STANCE_STYLE[displayData.stance] ?? STANCE_STYLE['需要更多信息'])
@@ -50,81 +67,69 @@ export default function AdvisorCard({ advisorId, status, judgment, streamingText
   }
 
   return (
-    <div
-      className="rounded-2xl border bg-white overflow-hidden transition-all duration-300"
-      style={{
-        borderColor: isFollowUpTarget ? meta.color : `${meta.color}22`,
-        borderLeftWidth: 3,
-        borderLeftColor: meta.color,
-        boxShadow: isFollowUpTarget ? `0 0 0 2px ${meta.color}44` : undefined,
-      }}
-    >
-      {/* Header */}
-      <div className="px-4 sm:px-5 pt-4 pb-3">
-        <div className="flex items-center justify-between mb-2">
-          <div className="flex items-center gap-2.5">
-            <span className="text-lg font-bold" style={{ color: meta.color }}>{meta.icon}</span>
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-semibold text-[#0D0D0D]">{meta.name}</span>
-              <span className="text-xs text-[#999] hidden sm:inline">{meta.nameEn}</span>
-              {/* 流式指示器 */}
-              {isStreaming && (
-                <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: meta.color }} />
-              )}
-            </div>
-          </div>
-          <div className="flex items-center gap-1.5">
-            {stance && (
-              <span className="text-xs font-semibold px-2.5 py-1 rounded-full"
-                style={{ color: stance.color, background: stance.bg }}>
-                {stance.label}
-              </span>
-            )}
-            {(status === 'done') && judgment && (
-              <button
-                onClick={() => copy(getJudgmentText())}
-                className="p-1.5 rounded-lg text-[#CCC] hover:text-[#888] hover:bg-[#F5F5F5] transition-all"
-                title="复制判断内容"
-              >
-                {copied ? (
-                  <svg className="w-3.5 h-3.5 text-[#16A34A]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-                  </svg>
-                ) : (
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <rect x="9" y="9" width="13" height="13" rx="2" strokeWidth="1.8" />
-                    <path strokeWidth="1.8" d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
-                  </svg>
-                )}
-              </button>
-            )}
-          </div>
-        </div>
-        <p className="text-[11px] text-[#BBB]">{meta.tagline}</p>
+    <div className="flex items-start gap-3 group">
+
+      {/* ── 头像 ── */}
+      <div
+        className="shrink-0 w-9 h-9 rounded-full flex items-center justify-center text-base font-bold text-white mt-0.5 select-none"
+        style={{
+          background: meta.color,
+          boxShadow: isFollowUpTarget ? `0 0 0 3px ${meta.color}44` : undefined,
+        }}
+      >
+        {meta.icon}
       </div>
 
-      {/* Content */}
-      <div className="px-4 sm:px-5 pb-4">
+      {/* ── 消息体 ── */}
+      <div className="flex-1 min-w-0">
 
-        {/* ── 思考中但还没有任何字段：纯等待动画 ── */}
+        {/* 名字行 */}
+        <div className="flex items-center gap-2 flex-wrap mb-1.5">
+          <span className="text-sm font-semibold text-[#0D0D0D]">{meta.name}</span>
+          <span className="text-xs text-[#BBB] hidden sm:inline">{meta.nameEn}</span>
+          {isStreaming && (
+            <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: meta.color }} />
+          )}
+          {stance && (
+            <span className="text-xs font-semibold px-2 py-0.5 rounded-full"
+              style={{ color: stance.color, background: stance.bg }}>
+              {stance.label}
+            </span>
+          )}
+          {status === 'done' && judgment && (
+            <button
+              onClick={() => copy(getJudgmentText())}
+              className="ml-auto opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded text-[#CCC] hover:text-[#888]"
+              title="复制"
+            >
+              {copied ? (
+                <svg className="w-3.5 h-3.5 text-[#16A34A]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                </svg>
+              ) : (
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <rect x="9" y="9" width="13" height="13" rx="2" strokeWidth="1.8" />
+                  <path strokeWidth="1.8" d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
+                </svg>
+              )}
+            </button>
+          )}
+        </div>
+
+        {/* ── 思考中，无内容 ── */}
         {status === 'thinking' && !streamFields && (
-          <div className="flex items-center gap-2 py-2">
-            <div className="flex gap-1">
-              {[0, 150, 300].map(d => (
-                <span
-                  key={d}
-                  className="w-1.5 h-1.5 rounded-full animate-bounce"
-                  style={{ background: meta.color, animationDelay: `${d}ms` }}
-                />
-              ))}
-            </div>
-            <span className="text-xs text-[#999]">正在思考…</span>
+          <div className="flex items-center gap-1.5 py-2">
+            {[0, 150, 300].map(d => (
+              <span key={d} className="w-2 h-2 rounded-full animate-bounce"
+                style={{ background: meta.color, animationDelay: `${d}ms` }} />
+            ))}
           </div>
         )}
 
-        {/* ── 渐进渲染：流式字段 or 完成后的完整判断 ── */}
-        {displayData && (status === 'thinking' || status === 'done' || status === 'error') && (
-          <div className="space-y-3">
+        {/* ── 内容区 ── */}
+        {displayData && (
+          <div className="space-y-2.5">
+
             {/* 核心判断 */}
             {displayData.core_judgment && (
               <p className="text-[15px] font-medium text-[#0D0D0D] leading-relaxed">
@@ -134,18 +139,18 @@ export default function AdvisorCard({ advisorId, status, judgment, streamingText
 
             {/* 推理 */}
             {displayData.reasoning && (
-              <div className="text-sm text-[#444] leading-relaxed">
+              <div className="text-sm text-[#555] leading-relaxed">
                 <Md>{displayData.reasoning}</Md>
               </div>
             )}
 
-            {/* 批评 */}
+            {/* 核心批评 */}
             {displayData.criticism && (
               <div
-                className="rounded-xl px-4 py-3"
+                className="rounded-xl px-3.5 py-2.5"
                 style={{ background: `${meta.color}0D`, borderLeft: `3px solid ${meta.color}` }}
               >
-                <p className="text-[10px] font-semibold uppercase tracking-widest mb-1.5" style={{ color: meta.color }}>
+                <p className="text-[10px] font-semibold uppercase tracking-widest mb-1" style={{ color: meta.color }}>
                   核心批评
                 </p>
                 <div className="text-sm text-[#0D0D0D] leading-relaxed">
@@ -154,15 +159,15 @@ export default function AdvisorCard({ advisorId, status, judgment, streamingText
               </div>
             )}
 
-            {/* 流式阶段：显示"正在生成剩余字段" */}
+            {/* 流式进行中 */}
             {isStreaming && !displayData.blind_spot && (
-              <div className="flex items-center gap-1.5 text-xs text-[#BBB]">
+              <div className="flex items-center gap-1.5 text-xs text-[#CCC]">
                 <span className="w-1 h-1 rounded-full animate-pulse" style={{ background: meta.color }} />
                 正在生成…
               </div>
             )}
 
-            {/* 展开/收起（仅完成状态） */}
+            {/* 展开/收起详情 */}
             {!isStreaming && (displayData.focus || displayData.demand || displayData.approach || displayData.blind_spot) && (
               <>
                 {!expanded ? (
@@ -174,17 +179,12 @@ export default function AdvisorCard({ advisorId, status, judgment, streamingText
                     展开完整判断 ▾
                   </button>
                 ) : (
-                  <div className="space-y-3 pt-1">
-                    {displayData.focus && <DetailRow label="关注焦点" value={displayData.focus} />}
-                    {displayData.demand && <DetailRow label="要求改变" value={displayData.demand} />}
-                    {displayData.approach && <DetailRow label="如何切入" value={displayData.approach} />}
-                    {displayData.blind_spot && <DetailRow label="他的盲点" value={displayData.blind_spot} color="#999" italic />}
-                    <button
-                      onClick={() => setExpanded(false)}
-                      className="text-xs font-medium text-[#BBB]"
-                    >
-                      收起 ▴
-                    </button>
+                  <div className="space-y-2.5 pt-2 border-t border-[#F0F0F0]">
+                    {displayData.focus     && <Detail label="关注焦点" value={displayData.focus} />}
+                    {displayData.demand    && <Detail label="要求改变" value={displayData.demand} />}
+                    {displayData.approach  && <Detail label="如何切入" value={displayData.approach} />}
+                    {displayData.blind_spot && <Detail label="他的盲点" value={displayData.blind_spot} muted />}
+                    <button onClick={() => setExpanded(false)} className="text-xs text-[#CCC]">收起 ▴</button>
                   </div>
                 )}
               </>
@@ -192,23 +192,21 @@ export default function AdvisorCard({ advisorId, status, judgment, streamingText
 
             {/* 追问按钮 */}
             {onFollowUp && (
-              <div className="pt-2 border-t border-[#F0F0F0] mt-2">
-                <button
-                  onClick={onFollowUp}
-                  className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full transition-all duration-150 hover:opacity-80 active:scale-95"
-                  style={{ background: `${meta.color}12`, color: meta.color }}
-                >
-                  <span>↗</span>
-                  <span>追问{meta.name}</span>
-                </button>
-              </div>
+              <button
+                onClick={onFollowUp}
+                className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full transition-all hover:opacity-80 active:scale-95"
+                style={{ background: `${meta.color}12`, color: meta.color }}
+              >
+                <span>↗</span>
+                <span>追问{meta.name}</span>
+              </button>
             )}
           </div>
         )}
 
-        {/* ── 错误且无 judgment ── */}
+        {/* ── 错误且无判断 ── */}
         {status === 'error' && !judgment && (
-          <div className="flex items-center gap-3 py-2">
+          <div className="flex items-center gap-3 py-1">
             <p className="text-sm text-[#DC2626]">判断获取失败</p>
             {onRetry && (
               <button
@@ -229,34 +227,13 @@ export default function AdvisorCard({ advisorId, status, judgment, streamingText
   )
 }
 
-// ── 子组件 ────────────────────────────────────────────────────────────────────
-
-function DetailRow({ label, value, color, italic }: {
-  label: string; value: string; color?: string; italic?: boolean
-}) {
+function Detail({ label, value, muted }: { label: string; value: string; muted?: boolean }) {
   return (
     <div>
-      <p className="text-[10px] font-semibold uppercase tracking-widest text-[#BBB] mb-1">{label}</p>
-      <div className={`text-sm leading-relaxed ${italic ? 'italic' : ''}`} style={{ color: color ?? '#333' }}>
+      <p className="text-[10px] font-semibold uppercase tracking-widest text-[#BBB] mb-0.5">{label}</p>
+      <div className={`text-sm leading-relaxed ${muted ? 'text-[#999] italic' : 'text-[#333]'}`}>
         <Md>{value}</Md>
       </div>
     </div>
-  )
-}
-
-function Md({ children }: { children: string }) {
-  return (
-    <ReactMarkdown
-      remarkPlugins={[remarkGfm]}
-      components={{
-        p: ({ children: c }) => <span>{c}</span>,
-        strong: ({ children: c }) => <strong className="font-semibold">{c}</strong>,
-        ul: ({ children: c }) => <ul className="list-disc pl-4 space-y-0.5">{c}</ul>,
-        ol: ({ children: c }) => <ol className="list-decimal pl-4 space-y-0.5">{c}</ol>,
-        li: ({ children: c }) => <li>{c}</li>,
-      }}
-    >
-      {children}
-    </ReactMarkdown>
   )
 }

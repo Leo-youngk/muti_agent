@@ -19,10 +19,11 @@ interface Props {
   onRegenerate: () => void
   onRetryAdvisor: (advisorId: AdvisorId) => void
   onExamplePrompt: (prompt: string) => void
+  onDebate: () => void
   isStreaming: boolean
 }
 
-export default function ChatView({ messages, onFollowUp, onRegenerate, onRetryAdvisor, onExamplePrompt, isStreaming }: Props) {
+export default function ChatView({ messages, onFollowUp, onRegenerate, onRetryAdvisor, onExamplePrompt, onDebate, isStreaming }: Props) {
   const advisorMap = useAdvisorMap()
   // activeAdvisors: all advisors (from context) — used for the empty state badges
   const allAdvisors = Object.values(advisorMap)
@@ -91,28 +92,29 @@ export default function ChatView({ messages, onFollowUp, onRegenerate, onRetryAd
         onScroll={handleScroll}
         className="h-full overflow-y-auto"
       >
-        <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8 space-y-8">
+        <div className="max-w-2xl mx-auto px-4 sm:px-6 py-8 space-y-6">
           {messages.map(msg => {
+            // ── 用户消息 ──────────────────────────────────────────────────────
             if (msg.role === 'user') {
               return (
                 <div key={msg.id} className="flex justify-end">
-                  <div className="max-w-lg bg-[#F0F0F0] rounded-2xl px-4 py-3 text-sm text-[#0D0D0D] leading-relaxed whitespace-pre-wrap">
+                  <div className="max-w-[80%] bg-[#0D0D0D] text-white rounded-2xl rounded-tr-sm px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap">
                     {msg.content}
                   </div>
                 </div>
               )
             }
 
+            // ── 顾问面板 ─────────────────────────────────────────────────────
             if (msg.role === 'panel' && msg.panel) {
               const { judgments, advisorStatus, analysis, analysisStatus, streamingTexts, analysisStream } = msg.panel
-              // Show advisors that are in the panel (status !== 'idle'), looked up from context
               const activeAdvisors = Object.values(advisorMap).filter(
                 a => advisorStatus[a.id] !== undefined && advisorStatus[a.id] !== 'idle'
               )
               const isLastPanel = msg === panelMessages.at(-1)
               const isThisFollowUp = !!msg.followUpMeta
+              const isDebateRound = !!msg.isDebateRound
 
-              // ── 进度计数 ──
               const doneCount = activeAdvisors.filter(a => {
                 const s = advisorStatus[a.id as AdvisorId]
                 return s === 'done' || s === 'error'
@@ -122,38 +124,50 @@ export default function ChatView({ messages, onFollowUp, onRegenerate, onRetryAd
               const showProgress = isLastPanel && isStreaming && !allDone && totalCount > 1
 
               return (
-                <div key={msg.id} className="space-y-4">
-                  {/* 追问标签 */}
-                  {isThisFollowUp && msg.followUpMeta && (
-                    <div className="flex items-center gap-2 text-xs text-[#BBB]">
-                      <span className="w-4 h-px bg-[#E0E0E0]" />
-                      追问模式
-                      <span className="flex-1 h-px bg-[#E0E0E0]" />
+                <div key={msg.id} className="space-y-5">
+
+                  {/* ── 场景标签 ── */}
+                  {(isThisFollowUp || isDebateRound) && (
+                    <div className="flex items-center gap-2 text-xs">
+                      <span className="flex-1 h-px" style={{ background: isDebateRound ? '#F59E0B44' : '#E0E0E0' }} />
+                      <span className="font-medium flex items-center gap-1"
+                        style={{ color: isDebateRound ? '#F59E0B' : '#BBB' }}>
+                        {isDebateRound
+                          ? <>
+                              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                                  d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                              </svg>
+                              辩论轮
+                            </>
+                          : '追问模式'
+                        }
+                      </span>
+                      <span className="flex-1 h-px" style={{ background: isDebateRound ? '#F59E0B44' : '#E0E0E0' }} />
                     </div>
                   )}
 
-                  {/* 进度条 */}
+                  {/* ── 进度条 ── */}
                   {showProgress && (
-                    <div className="flex items-center gap-3">
-                      <div className="flex-1 h-1 bg-[#F0F0F0] rounded-full overflow-hidden">
+                    <div className="flex items-center gap-3 pl-12">
+                      <div className="flex-1 h-0.5 bg-[#F0F0F0] rounded-full overflow-hidden">
                         <div
-                          className="h-full bg-[#0D0D0D] rounded-full transition-all duration-500"
+                          className="h-full bg-[#CCCCCC] rounded-full transition-all duration-500"
                           style={{ width: `${(doneCount / totalCount) * 100}%` }}
                         />
                       </div>
-                      <span className="text-xs text-[#999] shrink-0 tabular-nums">
-                        {doneCount}/{totalCount} 顾问已完成
+                      <span className="text-[11px] text-[#CCC] shrink-0 tabular-nums">
+                        {doneCount}/{totalCount}
                       </span>
                     </div>
                   )}
 
-                  {/* 顾问卡片 - 移动端单列，桌面端双列 */}
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  {/* ── 顾问消息流 ── */}
+                  <div className="space-y-5">
                     {activeAdvisors.map(a => {
                       const aid = a.id as AdvisorId
                       const status = advisorStatus[aid]
-                      const isDone = status === 'done' || status === 'error'
-                      const showFollowUp = isDone && isLastPanel && !isStreaming && status === 'done'
+                      const showFollowUp = status === 'done' && isLastPanel && !isStreaming
                       const showRetry = status === 'error' && !judgments[aid] && isLastPanel && !isStreaming
                       return (
                         <AdvisorCard
@@ -169,15 +183,15 @@ export default function ChatView({ messages, onFollowUp, onRegenerate, onRetryAd
                     })}
                   </div>
 
-                  {/* 分歧 + 结论 */}
+                  {/* ── 分歧 + 结论 ── */}
                   <ConclusionSection analysis={analysis} status={analysisStatus} streamingText={analysisStream} />
 
-                  {/* 重新生成按钮 */}
+                  {/* ── 操作按钮 ── */}
                   {isLastPanel && !isStreaming && analysisStatus !== 'thinking' && (
-                    <div className="flex justify-center pt-2">
+                    <div className="flex justify-center gap-3 pl-12 pt-1">
                       <button
                         onClick={onRegenerate}
-                        className="flex items-center gap-1.5 text-xs text-[#999] hover:text-[#555] transition-colors px-3 py-1.5 rounded-full hover:bg-[#F5F5F5]"
+                        className="flex items-center gap-1.5 text-xs text-[#CCC] hover:text-[#555] transition-colors px-3 py-1.5 rounded-full hover:bg-[#F5F5F5]"
                       >
                         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
@@ -185,6 +199,18 @@ export default function ChatView({ messages, onFollowUp, onRegenerate, onRetryAd
                         </svg>
                         重新生成
                       </button>
+                      {!isThisFollowUp && !isDebateRound && allDone && totalCount > 1 && (
+                        <button
+                          onClick={onDebate}
+                          className="flex items-center gap-1.5 text-xs font-medium text-[#F59E0B] hover:text-[#D97706] transition-colors px-3 py-1.5 rounded-full hover:bg-[#FFFBEB] border border-[#F59E0B33]"
+                        >
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                              d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                          </svg>
+                          深入辩论
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>

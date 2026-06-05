@@ -7,12 +7,13 @@ import type {
   AdvisorJudgment, CrossAnalysis, HistoryMessage, PreviousJudgment,
   FollowUpMeta, AppSettings,
 } from './types'
+import { resolveProvider } from './storage'
 import type { AdvisorMeta } from './advisors'
 import { makeInitialPanel } from './useThreads'
 
 // ─── 历史构建 ─────────────────────────────────────────────────────────────────
 
-function buildHistory(messages: Message[]): HistoryMessage[] {
+function buildHistory(messages: Message[], targetAdvisorId?: string | null): HistoryMessage[] {
   const result: HistoryMessage[] = []
   for (const msg of messages) {
     if (msg.role === 'user') {
@@ -20,12 +21,30 @@ function buildHistory(messages: Message[]): HistoryMessage[] {
     } else if (msg.role === 'panel' && msg.panel) {
       const { judgments, analysis } = msg.panel
       const parts: string[] = []
-      const advisorLines = Object.values(judgments)
-        .filter((j): j is AdvisorJudgment => j != null)
-        .map(j => `• ${j.advisor}（${j.stance}）：${j.core_judgment}`)
-      if (advisorLines.length > 0) {
-        parts.push(`[上一轮顾问立场]\n${advisorLines.join('\n')}`)
+
+      if (targetAdvisorId) {
+        // ── 追问模式：保留目标顾问的完整判断 ──
+        const targetJ = judgments[targetAdvisorId]
+        if (targetJ) {
+          parts.push(`[你的上一轮判断]\n立场：${targetJ.stance}\n核心判断：${targetJ.core_judgment}\n推理：${targetJ.reasoning}\n批评：${targetJ.criticism}`)
+        }
+        // 其他顾问只保留摘要
+        const otherLines = Object.entries(judgments)
+          .filter(([id, j]) => id !== targetAdvisorId && j != null)
+          .map(([, j]) => `• ${j!.advisor}（${j!.stance}）：${j!.core_judgment}`)
+        if (otherLines.length > 0) {
+          parts.push(`[其他顾问立场]\n${otherLines.join('\n')}`)
+        }
+      } else {
+        // ── 全团模式：所有顾问摘要 ──
+        const advisorLines = Object.values(judgments)
+          .filter((j): j is AdvisorJudgment => j != null)
+          .map(j => `• ${j.advisor}（${j.stance}）：${j.core_judgment}`)
+        if (advisorLines.length > 0) {
+          parts.push(`[上一轮顾问立场]\n${advisorLines.join('\n')}`)
+        }
       }
+
       if (analysis) {
         parts.push(`[主持人结论] ${analysis.conclusion.verdict}`)
       }
@@ -34,7 +53,8 @@ function buildHistory(messages: Message[]): HistoryMessage[] {
       }
     }
   }
-  return result.slice(-6)
+  // 追问模式保留更多历史（8条），全团模式6条
+  return result.slice(targetAdvisorId ? -8 : -6)
 }
 
 export function buildPreviousJudgments(messages: Message[]): PreviousJudgment[] {
@@ -143,6 +163,7 @@ export function useStreaming(
     currentPanelRef.current = { tid: threadId, msgId: panelMsgId }
 
     try {
+      const provider = resolveProvider(settings, selectedModel)
       const controller = new AbortController()
       const res = await fetch('/api/chat/stream', {
         method: 'POST',
@@ -152,8 +173,8 @@ export function useStreaming(
           task,
           history,
           model: selectedModel,
-          clientApiKey: settings.apiKey || undefined,
-          clientBaseUrl: settings.baseUrl || undefined,
+          clientApiKey: provider?.apiKey || settings.apiKey || undefined,
+          clientBaseUrl: provider?.baseUrl || settings.baseUrl || undefined,
           customProfiles: Object.keys(settings.customProfiles).length > 0
             ? settings.customProfiles : undefined,
           targetAdvisor: advisorId,
@@ -188,7 +209,6 @@ export function useStreaming(
               (tokenBuffer.current.advisorTokens[evt.advisorId] ?? '') + evt.token
             scheduleFlush()
           } else if (evt.event === 'advisor_complete' && evt.advisorId) {
-            // flush remaining tokens
             flushTokens()
             updatePanel(threadId, panelMsgId, p => ({
               ...p,
@@ -225,7 +245,7 @@ export function useStreaming(
     const isFollowUp = targetAdvisor !== null
 
     const currentMessages = threads.find(t => t.id === tid)?.messages ?? []
-    const history = buildHistory(currentMessages)
+    const history = buildHistory(currentMessages, isFollowUp ? targetAdvisor : null)
     const previousJudgments = isFollowUp ? buildPreviousJudgments(currentMessages) : []
 
     const userMsg: Message = { id: uuidv4(), role: 'user', content: task }
@@ -250,6 +270,7 @@ export function useStreaming(
     setTargetAdvisor(null)
 
     try {
+      const provider = resolveProvider(settings, selectedModel)
       const controller = new AbortController()
       abortControllerRef.current = controller
 
@@ -262,8 +283,8 @@ export function useStreaming(
           thread_id: tid,
           history,
           model: selectedModel,
-          clientApiKey: settings.apiKey || undefined,
-          clientBaseUrl: settings.baseUrl || undefined,
+          clientApiKey: provider?.apiKey || settings.apiKey || undefined,
+          clientBaseUrl: provider?.baseUrl || settings.baseUrl || undefined,
           customProfiles: Object.keys(settings.customProfiles).length > 0
             ? settings.customProfiles : undefined,
           targetAdvisor: capturedTarget ?? undefined,
@@ -360,6 +381,158 @@ export function useStreaming(
     }
   }, [isStreaming, targetAdvisor, updateThread, updatePanel, flushTokens, scheduleFlush])
 
+  /** 辩论模式：让所有顾问互相回应 */
+  const handleDebate = useCallback(async (
+    activeId: string,
+    threads: Thread[],
+    selectedModel: string,
+    settings: AppSettings,
+    activeAdvisors: AdvisorMeta[],
+  ) => {
+    if (isStreaming) return
+    setError(null)
+    setIsStreaming(true)
+
+    const tid = activeId
+    const currentMessages = threads.find(t => t.id === tid)?.messages ?? []
+
+    // 找到最后一个完成的面板，提取所有判断
+    const lastPanel = [...currentMessages].reverse().find(m => m.role === 'panel' && m.panel)
+    if (!lastPanel?.panel) {
+      setIsStreaming(false)
+      return
+    }
+
+    const allJudgments: Record<string, import('./types').AdvisorJudgment> = {}
+    for (const [id, j] of Object.entries(lastPanel.panel.judgments)) {
+      if (j) allJudgments[id] = j
+    }
+
+    // 找到原始问题
+    const lastUser = [...currentMessages].reverse().find(m => m.role === 'user')
+    const originalTask = lastUser?.content ?? ''
+
+    // 创建辩论轮面板消息
+    const panelMsgId = uuidv4()
+    const debateMsg: Message = {
+      id: panelMsgId, role: 'panel', content: '',
+      panel: makeInitialPanel(activeAdvisors),
+      isDebateRound: true,
+    }
+
+    updateThread(tid, t => ({
+      ...t,
+      messages: [...t.messages, debateMsg],
+    }))
+
+    currentPanelRef.current = { tid, msgId: panelMsgId }
+
+    try {
+      const provider = resolveProvider(settings, selectedModel)
+      const controller = new AbortController()
+      abortControllerRef.current = controller
+
+      const res = await fetch('/api/chat/stream', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
+        body: JSON.stringify({
+          task: originalTask,
+          history: [],
+          model: selectedModel,
+          mode: 'debate',
+          allJudgments,
+          clientApiKey: provider?.apiKey || settings.apiKey || undefined,
+          clientBaseUrl: provider?.baseUrl || settings.baseUrl || undefined,
+          customProfiles: Object.keys(settings.customProfiles).length > 0
+            ? settings.customProfiles : undefined,
+          customAdvisors: settings.customAdvisors?.length ? settings.customAdvisors : undefined,
+          hiddenAdvisors: settings.hiddenAdvisors?.length ? settings.hiddenAdvisors : undefined,
+        }),
+      })
+
+      if (!res.ok) {
+        const text = await res.text()
+        let detail = text
+        try { detail = JSON.parse(text).error ?? text } catch {}
+        throw new Error(detail)
+      }
+
+      const reader = res.body!.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop() ?? ''
+
+        for (const line of lines) {
+          const trimmed = line.trim()
+          if (trimmed.startsWith(':') || !trimmed.startsWith('data: ')) continue
+          const data = trimmed.slice(6).trim()
+          if (!data) continue
+          let evt: StreamEvent
+          try { evt = JSON.parse(data) } catch { continue }
+
+          if (evt.event === 'advisor_start' && evt.advisorId) {
+            updatePanel(tid, panelMsgId, p => ({
+              ...p, advisorStatus: { ...p.advisorStatus, [evt.advisorId!]: 'thinking' },
+            }))
+          } else if (evt.event === 'advisor_token' && evt.advisorId && evt.token) {
+            tokenBuffer.current.advisorTokens[evt.advisorId] =
+              (tokenBuffer.current.advisorTokens[evt.advisorId] ?? '') + evt.token
+            scheduleFlush()
+          } else if (evt.event === 'advisor_complete' && evt.advisorId) {
+            flushTokens()
+            updatePanel(tid, panelMsgId, p => ({
+              ...p,
+              advisorStatus: {
+                ...p.advisorStatus,
+                [evt.advisorId!]: evt.judgment ? 'done' : 'error',
+              },
+              judgments: evt.judgment
+                ? { ...p.judgments, [evt.advisorId!]: evt.judgment as import('./types').AdvisorJudgment }
+                : p.judgments,
+            }))
+          } else if (evt.event === 'analysis_start') {
+            updatePanel(tid, panelMsgId, p => ({ ...p, analysisStatus: 'thinking' }))
+          } else if (evt.event === 'analysis_token' && evt.token) {
+            tokenBuffer.current.analysisTokens += evt.token
+            scheduleFlush()
+          } else if (evt.event === 'analysis_complete') {
+            flushTokens()
+            updatePanel(tid, panelMsgId, p => ({
+              ...p,
+              analysisStatus: 'done',
+              analysis: evt.analysis as import('./types').CrossAnalysis ?? undefined,
+            }))
+          } else if (evt.event === 'error') {
+            setError(evt.error ?? 'Unknown error')
+            break
+          } else if (evt.event === 'complete') {
+            break
+          }
+        }
+      }
+    } catch (e: unknown) {
+      if (!(e instanceof Error && e.name === 'AbortError')) {
+        setError(e instanceof Error ? e.message : String(e))
+      }
+    } finally {
+      abortControllerRef.current = null
+      currentPanelRef.current = null
+      setIsStreaming(false)
+      if (rafRef.current !== null) {
+        cancelAnimationFrame(rafRef.current)
+        rafRef.current = null
+        flushTokens()
+      }
+    }
+  }, [isStreaming, updateThread, updatePanel, flushTokens, scheduleFlush])
+
   return {
     isStreaming,
     error,
@@ -370,5 +543,6 @@ export function useStreaming(
     handleFollowUp,
     handleSubmit,
     handleRetryAdvisor,
+    handleDebate,
   }
 }

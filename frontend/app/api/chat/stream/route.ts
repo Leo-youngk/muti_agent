@@ -9,9 +9,11 @@ export const maxDuration = 120
 // ─── Prompt 构建 ───────────────────────────────────────────────────────────────
 
 function buildAdvisorSystemPrompt(profile: string): string {
-  return `你是一个人物思维模拟系统。你的任务是深度还原以下人物面对一个具体问题时的判断方式。
+  return `你是一个人物思维模拟系统。你的任务是完整还原以下人物——他的世界观、价值体系、思维习惯、语言风格——面对用户提出的任何问题时会如何回应。
 
-你不是在"给建议"，你是在模拟这个人——用他的优先级、他的偏好、他的批评习惯、他的盲点来思考这个问题。
+这个人物不只是某个领域的专家。他是一个完整的人，对世界有自己独特的理解。无论问题是关于创业、人生选择、人际关系、教育、健康、道德困境还是日常琐事，他都会用自己的一套思维方式来回应。
+
+你不是在"给建议"，你是在成为这个人——用他的价值观排序、他的直觉偏好、他的语言习惯、他会忽略的东西来思考。
 
 === 人物档案 ===
 ${profile}
@@ -20,7 +22,7 @@ ${profile}
 要求：
 1. 你的判断必须有明确立场：支持、反对、或有条件支持。不允许"既有机会也有风险"式的骑墙。
 2. 你的语言风格必须匹配档案中描述的表达方式。
-3. 你的批评必须从这个人物独特的思维角度出发，不能是通用商业建议。
+3. 你的回应必须从这个人物独特的世界观出发，不能是通用建议。即使问题不在他的专业领域，他也有自己的看法——用他的思维方式去推导。
 4. 使用"以 XX 的思维方式，他大概率会……"这样的表述框架。不要写成"XX 说过……"或"XX 一定会……"。
 5. 所有输出内容必须使用简体中文，包括 JSON 字段的值。
 6. "stance" 字段必须从以下四个值中精确选一个，不得修改：支持、反对、有条件支持、需要更多信息
@@ -31,7 +33,7 @@ ${profile}
   "advisor": "人物名",
   "stance": "支持 | 反对 | 有条件支持 | 需要更多信息",
   "core_judgment": "一句话核心判断，用这个人物的口吻",
-  "reasoning": "3-5句话展开判断逻辑，要体现此人的思维优先级",
+  "reasoning": "3-5句话展开判断逻辑，要体现此人的思维方式和价值观",
   "focus": "他会立刻抓住的关键问题是什么",
   "criticism": "他最尖锐的批评，用他本人的风格表达",
   "demand": "他会要求立刻做什么改变",
@@ -40,13 +42,86 @@ ${profile}
 }`
 }
 
-function buildFollowUpPrefix(previousJudgments: PreviousJudgment[], targetId: AdvisorId): string {
+/** 追问模式：构建包含其他顾问完整立场的增强系统提示 */
+function buildFollowUpSystemAddendum(previousJudgments: PreviousJudgment[], targetId: AdvisorId): string {
   const others = previousJudgments.filter(p => p.advisorId !== targetId)
   if (others.length === 0) return ''
-  const lines = others.map(({ judgment }) =>
-    `- ${judgment.advisor || targetId}（${judgment.stance}）：${judgment.core_judgment}`
-  ).join('\n')
-  return `[参考背景：上一轮其他顾问的立场]\n${lines}\n[以上仅供参考，请优先完整回答用户的新问题]\n---`
+
+  const blocks = others.map(({ judgment: j }) => {
+    return `【${j.advisor}】立场：${j.stance}
+核心判断：${j.core_judgment}
+推理：${j.reasoning}
+批评：${j.criticism}
+盲点：${j.blind_spot}`
+  }).join('\n\n')
+
+  return `
+
+=== 重要背景：其他顾问在上一轮的完整判断 ===
+${blocks}
+=== 背景结束 ===
+
+追问模式要求：
+1. 用户正在单独追问你。认真回答他的新问题。
+2. 如果其他顾问的观点与你冲突，你必须主动回应——明确说明为什么你不同意，或者承认他们指出的合理之处。
+3. 不要回避分歧。如果别人批评了你可能忽略的东西，正面应对。
+4. 你可以修正自己的立场，但必须说明为什么改变。
+5. 仍然按照原有 JSON 格式输出。`
+}
+
+/** 辩论模式：构建让顾问互相回应的系统提示 */
+function buildDebateSystemPrompt(profile: string, allJudgments: Record<string, AdvisorJudgment>, selfId: string): string {
+  const selfJudgment = allJudgments[selfId]
+  const othersText = Object.entries(allJudgments)
+    .filter(([id]) => id !== selfId)
+    .map(([, j]) => {
+      return `【${j.advisor}】立场：${j.stance}
+核心判断：${j.core_judgment}
+推理：${j.reasoning}
+批评：${j.criticism}
+盲点：${j.blind_spot}`
+    }).join('\n\n')
+
+  return `你是一个人物思维模拟系统。你正在进行第二轮辩论——你已经看到了所有顾问的初始判断，现在你需要回应他们。
+
+=== 人物档案 ===
+${profile}
+=== 档案结束 ===
+
+=== 你在第一轮的判断 ===
+立场：${selfJudgment?.stance ?? '未知'}
+核心判断：${selfJudgment?.core_judgment ?? '未知'}
+推理：${selfJudgment?.reasoning ?? '未知'}
+=== 你的判断结束 ===
+
+=== 其他顾问的判断 ===
+${othersText}
+=== 其他判断结束 ===
+
+辩论要求：
+1. 仔细审视每个顾问的立场，找出你最不同意的观点，用你独特的思维方式进行反驳。
+2. 如果别人指出了你的盲点，诚实承认并修正。不要死守错误立场。
+3. 你可以改变立场——"stance" 字段填写你辩论后的最新立场。
+4. "core_judgment" 写你经过辩论后的修正判断。
+5. "reasoning" 重点写：你为什么坚持/改变立场，以及对其他人最关键的反驳。
+6. "criticism" 写你对其他顾问最尖锐的反驳。
+7. "blind_spot" 写经过辩论后你承认自己之前忽略了什么。
+8. 所有内容必须使用简体中文。
+9. 输出纯 JSON，不要加 markdown 标记。
+10. "stance" 必须从：支持、反对、有条件支持、需要更多信息 中选一个。
+
+输出 JSON 格式（所有字段必须存在）：
+{
+  "advisor": "人物名",
+  "stance": "辩论后的立场",
+  "core_judgment": "经过辩论修正后的核心判断",
+  "reasoning": "为什么坚持/改变立场 + 对其他人的关键回应",
+  "focus": "辩论中暴露的最关键问题",
+  "criticism": "对其他顾问最尖锐的反驳",
+  "demand": "基于辩论结果的修正要求",
+  "approach": "修正后的行动方案",
+  "blind_spot": "你承认自己之前忽略了什么"
+}`
 }
 
 function buildCrossAnalysisPrompt(judgmentsText: string): string {
@@ -155,6 +230,10 @@ export async function POST(request: Request) {
     customAdvisors?: CustomAdvisor[]
     /** 隐藏的顾问 ID */
     hiddenAdvisors?: string[]
+    /** 模式：normal=正常, debate=辩论轮 */
+    mode?: 'normal' | 'debate'
+    /** 辩论模式下传入所有初始判断 */
+    allJudgments?: Record<string, AdvisorJudgment>
   }
   try { body = await request.json() } catch { body = {} }
 
@@ -206,27 +285,29 @@ export async function POST(request: Request) {
 
       async function runAdvisor(
         advisor: typeof ADVISORS[0],
-        userMsgPrefix?: string
+        opts?: { systemAddendum?: string; overrideSystemPrompt?: string }
       ): Promise<AdvisorJudgment | null> {
         const advisorId = advisor.id as AdvisorId
         send({ event: 'advisor_start', advisorId })
 
         const profile = customProfiles[advisorId] || advisor.profile
-        const userContent = userMsgPrefix ? `${userMsgPrefix}\n${task}` : task
+        const systemPrompt = opts?.overrideSystemPrompt
+          ?? (buildAdvisorSystemPrompt(profile) + (opts?.systemAddendum ?? ''))
+        const userContent = task
 
         for (let attempt = 0; attempt <= 2; attempt++) {
-          if (attempt > 0) await sleep(600 * attempt)
+          if (attempt > 0) await sleep(1500 + 1500 * attempt)  // 3s, 4.5s — 对抗 rate limit
 
           const perCallAbort = new AbortController()
-          const timeoutId = setTimeout(() => perCallAbort.abort('per-advisor-timeout'), 30_000)
+          const timeoutId = setTimeout(() => perCallAbort.abort('per-advisor-timeout'), 60_000)
           let accumulated = ''
 
           try {
             const stream = await client.chat.completions.create(
               {
-                model, temperature: 0.85, stream: true,
+                model, temperature: 0.7, max_tokens: 131072, stream: true,
                 messages: [
-                  { role: 'system', content: buildAdvisorSystemPrompt(profile) },
+                  { role: 'system', content: systemPrompt },
                   ...history.map(h => ({ role: h.role as 'user' | 'assistant', content: h.content })),
                   { role: 'user', content: userContent },
                 ],
@@ -272,10 +353,10 @@ export async function POST(request: Request) {
         send({ event: 'analysis_start' })
 
         for (let attempt = 0; attempt <= 2; attempt++) {
-          if (attempt > 0) await sleep(600 * attempt)
+          if (attempt > 0) await sleep(1500 + 1500 * attempt)
           try {
             const analysisStream = await client.chat.completions.create({
-              model, temperature: 0.7, stream: true,
+              model, temperature: 0.7, max_tokens: 131072, stream: true,
               messages: [
                 { role: 'system', content: buildCrossAnalysisPrompt(judgmentsText) },
                 { role: 'user', content: `用户问题：${task}` },
@@ -295,12 +376,36 @@ export async function POST(request: Request) {
       }
 
       try {
+        // ── 辩论模式 ──────────────────────────────────────────────────────
+        if (body.mode === 'debate' && body.allJudgments) {
+          const debateJudgments = body.allJudgments
+          const completedDebate: Record<string, AdvisorJudgment> = {}
+
+          // 错开启动辩论
+          const debatePromises = activeAdvisors.map(async (advisor, idx) => {
+            if (idx > 0) await sleep(300 * idx)
+            const profile = customProfiles[advisor.id] || advisor.profile
+            const debatePrompt = buildDebateSystemPrompt(profile, debateJudgments, advisor.id)
+            const judgment = await runAdvisor(advisor, { overrideSystemPrompt: debatePrompt })
+            if (judgment) completedDebate[advisor.id] = judgment
+            return { advisorId: advisor.id, judgment }
+          })
+
+          await Promise.all(debatePromises)
+
+          // 辩论后的交叉分析
+          await runCrossAnalysis(completedDebate)
+
+          send({ event: 'complete' })
+          return
+        }
+
         // ── 追问模式 ──────────────────────────────────────────────────────
         if (targetAdvisor) {
           const advisor = activeAdvisors.find(a => a.id === targetAdvisor)
           if (advisor) {
-            const prefix = buildFollowUpPrefix(previousJudgments, targetAdvisor)
-            const judgment = await runAdvisor(advisor, prefix || undefined)
+            const addendum = buildFollowUpSystemAddendum(previousJudgments, targetAdvisor)
+            const judgment = await runAdvisor(advisor, addendum ? { systemAddendum: addendum } : undefined)
 
             if (followUpAnalysis && judgment) {
               const allJudgments: Record<string, AdvisorJudgment> = {}
@@ -325,8 +430,9 @@ export async function POST(request: Request) {
         let analysisResolve: (() => void) | null = null
         const analysisGate = new Promise<void>(r => { analysisResolve = r })
 
-        // 并行发起所有顾问调用
-        const advisorPromises = activeAdvisors.map(async (advisor) => {
+        // 错开启动：每个顾问间隔 300ms，避免同时撞 rate limit
+        const advisorPromises = activeAdvisors.map(async (advisor, idx) => {
+          if (idx > 0) await sleep(300 * idx)
           const judgment = await runAdvisor(advisor)
           if (judgment) completedJudgments[advisor.id] = judgment
           doneCount++

@@ -61,6 +61,8 @@ export interface Message {
   content: string
   panel?: PanelResult
   followUpMeta?: FollowUpMeta
+  /** 标记此面板为辩论轮 */
+  isDebateRound?: boolean
 }
 
 export interface Thread {
@@ -81,11 +83,23 @@ export interface CustomAdvisor {
   profile: string
 }
 
+/** API 服务商 */
+export interface Provider {
+  id: string
+  name: string
+  baseUrl: string
+  apiKey: string
+  models: string[]
+}
+
 /** 用户可配置的全局设置 */
 export interface AppSettings {
-  apiKey: string
-  baseUrl: string
+  providers: Provider[]
   defaultModel: string
+  /** @deprecated 已迁移到 providers */
+  apiKey: string
+  /** @deprecated 已迁移到 providers */
+  baseUrl: string
   /** 覆盖内置顾问的思维档案 */
   customProfiles: Partial<Record<BuiltinAdvisorId, string>>
   /** 用户新增的自定义顾问 */
@@ -124,4 +138,6 @@ export interface StreamEvent {
   judgment?: AdvisorJudgment | null
   analysis?: CrossAnalysis | null
   error?: string
+  /** 辩论模式下标记阶段 */
+  phase?: 'initial' | 'debate'
 }

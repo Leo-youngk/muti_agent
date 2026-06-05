@@ -9,10 +9,40 @@
 
 html, body {
   height: 100%;
+  /* iOS PWA: 防止橡皮筋滚动影响整体布局 */
+  overscroll-behavior: none;
 }
 
-/* Thin scrollbar */
-::-webkit-scrollbar { width: 5px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #E0E0E0; border-radius: 9999px; }
-::-webkit-scrollbar-thumb:hover { background: #C8C8C8; }
+/* iOS PWA standalone 模式下，body 占满整个屏幕含安全区 */
+@supports (padding-top: env(safe-area-inset-top)) {
+  body {
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}
+
+/* iOS 滚动惯性 */
+.overflow-y-auto,
+.overflow-y-scroll {
+  -webkit-overflow-scrolling: touch;
+}
+
+/* 禁用 iOS 长按选中/放大镜（聊天气泡区域） */
+.no-callout {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* 触摸高亮去掉（按钮等） */
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Thin scrollbar (desktop only) */
+@media (hover: hover) {
+  ::-webkit-scrollbar { width: 5px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #E0E0E0; border-radius: 9999px; }
+  ::-webkit-scrollbar-thumb:hover { background: #C8C8C8; }
+}

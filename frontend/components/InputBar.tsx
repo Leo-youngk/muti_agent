@@ -2,19 +2,18 @@
 
 import { useState, useRef, type KeyboardEvent, type ChangeEvent } from 'react'
 import type { AdvisorId } from '@/lib/types'
-import { ADVISOR_MAP } from '@/lib/advisors'
+import { useAdvisorMap } from '@/lib/AdvisorContext'
 
 interface Props {
   onSubmit: (task: string) => void
   isStreaming: boolean
-  /** 点击停止当前流式请求 */
   onStop?: () => void
-  /** 当前选中的追问顾问，null 表示全团模式 */
   targetAdvisor?: AdvisorId | null
   onClearTarget?: () => void
 }
 
 export default function InputBar({ onSubmit, isStreaming, onStop, targetAdvisor, onClearTarget }: Props) {
+  const advisorMap = useAdvisorMap()
   const [value, setValue] = useState('')
   const ref = useRef<HTMLTextAreaElement>(null)
 
@@ -33,45 +32,50 @@ export default function InputBar({ onSubmit, isStreaming, onStop, targetAdvisor,
   const handleChange = (e: ChangeEvent<HTMLTextAreaElement>) => {
     setValue(e.target.value)
     e.target.style.height = 'auto'
-    e.target.style.height = Math.min(e.target.scrollHeight, 200) + 'px'
+    e.target.style.height = Math.min(e.target.scrollHeight, 160) + 'px'
   }
 
-  const targetMeta = targetAdvisor ? ADVISOR_MAP[targetAdvisor] : null
+  const targetMeta = targetAdvisor ? advisorMap[targetAdvisor] : null
   const isFollowUpMode = !!targetMeta
 
   return (
-    <div className="border-t border-[#EBEBEB] bg-white px-4 py-4">
-      <div className="max-w-3xl mx-auto space-y-2">
+    <div
+      className="bg-white px-3 sm:px-4 pt-2"
+      style={{ paddingBottom: 'max(12px, env(safe-area-inset-bottom))' }}
+    >
+      <div className="max-w-2xl mx-auto">
 
-        {/* 追问模式提示 chip */}
+        {/* 追问模式 chip */}
         {isFollowUpMode && targetMeta && (
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 mb-2">
             <div
-              className="flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium"
+              className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium"
               style={{ background: `${targetMeta.color}12`, color: targetMeta.color, border: `1px solid ${targetMeta.color}30` }}
             >
               <span>{targetMeta.icon}</span>
               <span>追问 {targetMeta.name}</span>
-              <span className="text-[10px] opacity-60">（仅他能看到本轮所有观点）</span>
             </div>
             <button
               onClick={onClearTarget}
-              className="text-xs text-[#BBB] hover:text-[#888] transition-colors"
-              title="取消追问，恢复全团模式"
+              className="text-xs text-[#CCC] hover:text-[#888] transition-colors flex items-center gap-0.5"
             >
-              ✕ 取消
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+              取消
             </button>
           </div>
         )}
 
-        <div className={`flex items-end gap-3 rounded-2xl border px-4 py-3 transition-colors duration-150 ${
-          isStreaming
-            ? 'border-[#EBEBEB] bg-[#FAFAFA]'
-            : isFollowUpMode
-              ? 'bg-white focus-within:border-current'
-              : 'border-[#DDDDE0] bg-white focus-within:border-[#0D0D0D]'
-        }`}
-          style={isFollowUpMode && targetMeta ? { borderColor: `${targetMeta.color}50` } : undefined}
+        {/* 输入框容器 */}
+        <div
+          className="flex items-end gap-2 rounded-2xl px-4 py-3 transition-all duration-150"
+          style={{
+            background: '#F5F5F5',
+            border: isFollowUpMode && targetMeta
+              ? `1.5px solid ${targetMeta.color}50`
+              : '1.5px solid transparent',
+          }}
         >
           <textarea
             ref={ref}
@@ -79,42 +83,43 @@ export default function InputBar({ onSubmit, isStreaming, onStop, targetAdvisor,
             onChange={handleChange}
             onKeyDown={handleKeyDown}
             disabled={isStreaming}
-            autoFocus
             placeholder={
               isStreaming
                 ? '顾问正在回答…'
                 : isFollowUpMode && targetMeta
-                  ? `追问 ${targetMeta.name}…  (Enter ↵ 发送)`
-                  : 'Message Multi-Agent…  (Enter ↵ to send)'
+                  ? `追问 ${targetMeta.name}…`
+                  : '你在考虑什么决定？'
             }
             rows={1}
-            className="flex-1 resize-none bg-transparent outline-none text-sm text-[#0D0D0D]
-                       placeholder-[#AAA] leading-relaxed max-h-48 disabled:cursor-not-allowed"
+            className="flex-1 resize-none bg-transparent outline-none text-[15px] text-[#0D0D0D]
+                       placeholder-[#AAAAAA] leading-relaxed disabled:cursor-not-allowed"
+            style={{ maxHeight: '160px' }}
           />
+
+          {/* 发送 / 停止按钮 */}
           <button
             onClick={isStreaming ? onStop : submit}
             disabled={isStreaming ? false : !value.trim()}
-            className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center transition-all duration-150
-                       text-white disabled:opacity-25 hover:enabled:opacity-80 active:enabled:scale-95"
-            style={{ background: isFollowUpMode && targetMeta ? targetMeta.color : '#0D0D0D' }}
-            title={isStreaming ? '停止' : '发送'}
+            className="shrink-0 w-9 h-9 rounded-xl flex items-center justify-center transition-all duration-150
+                       text-white disabled:opacity-20 active:scale-95"
+            style={{
+              background: isFollowUpMode && targetMeta
+                ? targetMeta.color
+                : (value.trim() || isStreaming) ? '#0D0D0D' : '#CCCCCC',
+            }}
           >
             {isStreaming ? (
-              /* 停止按钮 ◼ */
-              <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
+              <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
                 <rect x="4" y="4" width="16" height="16" rx="2" />
               </svg>
             ) : (
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 12h14M12 5l7 7-7 7" />
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 19V5M5 12l7-7 7 7" />
               </svg>
             )}
           </button>
         </div>
 
-        <p className="text-[11px] text-[#BBB] text-center">
-          {isFollowUpMode ? 'Shift+Enter 换行 · ✕ 取消追问恢复全团模式' : 'Shift+Enter for new line'}
-        </p>
       </div>
     </div>
   )

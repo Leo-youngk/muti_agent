@@ -77,6 +77,7 @@ export function loadThreadsSync(): Thread[] {
 // ─── Settings（体积小，继续用 localStorage 同步读写）─────────────────────────────
 
 export const DEFAULT_SETTINGS: AppSettings = {
+  providers: [],
   apiKey: '',
   baseUrl: '',
   defaultModel: 'deepseek-v4-flash',
@@ -85,11 +86,46 @@ export const DEFAULT_SETTINGS: AppSettings = {
   hiddenAdvisors: [],
 }
 
+const LEGACY_PRESET_MODELS = [
+  'deepseek-v4-flash', 'deepseek-v3', 'deepseek-r1', 'gpt-4o-mini', 'gpt-4o',
+]
+
 export function loadSettings(): AppSettings {
   return safe(() => {
     const raw = localStorage.getItem(SETTINGS_KEY)
-    return raw ? { ...DEFAULT_SETTINGS, ...JSON.parse(raw) } : DEFAULT_SETTINGS
+    const s: AppSettings = raw ? { ...DEFAULT_SETTINGS, ...JSON.parse(raw) } : DEFAULT_SETTINGS
+    if (!s.providers) s.providers = []
+
+    // 迁移：旧版单 apiKey/baseUrl → provider
+    if (s.providers.length === 0 && (s.apiKey || s.baseUrl)) {
+      const models = new Set<string>()
+      if (s.defaultModel) models.add(s.defaultModel)
+      LEGACY_PRESET_MODELS.forEach(m => models.add(m))
+      try {
+        const custom: string[] = JSON.parse(localStorage.getItem('advisor_custom_models') ?? '[]')
+        custom.forEach(m => models.add(m))
+        localStorage.removeItem('advisor_custom_models')
+      } catch {}
+      s.providers = [{
+        id: 'migrated_default',
+        name: '默认',
+        baseUrl: s.baseUrl,
+        apiKey: s.apiKey,
+        models: Array.from(models),
+      }]
+    }
+
+    return s
   }, DEFAULT_SETTINGS)
+}
+
+export function resolveProvider(settings: AppSettings, model: string): { apiKey: string; baseUrl: string } | null {
+  for (const p of settings.providers) {
+    if (p.models.includes(model)) {
+      return { apiKey: p.apiKey, baseUrl: p.baseUrl }
+    }
+  }
+  return null
 }
 
 export function saveSettings(s: AppSettings): void {

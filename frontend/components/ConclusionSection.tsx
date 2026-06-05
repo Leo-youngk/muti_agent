@@ -55,34 +55,29 @@ export default function ConclusionSection({
 
   if (status === 'thinking') {
     return (
-      <div className="mt-6 space-y-3">
-        <p className="text-[11px] font-semibold uppercase tracking-widest text-[#BBB]">主持人分析</p>
-        {streamingText ? (
-          <div className="rounded-xl overflow-hidden border border-[#EBEBEB]">
-            <div className="px-3 py-1.5 bg-[#F7F7F8] border-b border-[#EBEBEB] flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-[#888] animate-pulse" />
-              <span className="text-[10px] font-semibold uppercase tracking-widest text-[#888]">
-                正在综合分析
-              </span>
-            </div>
-            <pre
-              className="px-3 py-2.5 text-[11px] text-[#555] font-mono leading-relaxed whitespace-pre-wrap break-words bg-white"
-              style={{ maxHeight: '10rem', overflow: 'hidden' }}
-            >
-              {streamingText.length > 500 ? '…' + streamingText.slice(-500) : streamingText}
-            </pre>
+      <div className="flex items-start gap-3 mt-2">
+        <div className="shrink-0 w-9 h-9 rounded-full bg-[#0D0D0D] flex items-center justify-center text-white text-xs font-bold mt-0.5 select-none">
+          主
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-1.5">
+            <span className="text-sm font-semibold text-[#0D0D0D]">主持人</span>
+            <span className="text-xs text-[#BBB]">Moderator</span>
           </div>
-        ) : (
-          <div className="flex items-center gap-2 py-3">
-            <div className="flex gap-1">
+          {streamingText ? (
+            <pre className="text-[12px] text-[#555] font-mono leading-relaxed whitespace-pre-wrap break-words"
+              style={{ maxHeight: '8rem', overflow: 'hidden' }}>
+              {streamingText.length > 400 ? '…' + streamingText.slice(-400) : streamingText}
+            </pre>
+          ) : (
+            <div className="flex items-center gap-1.5 py-2">
               {[0, 150, 300].map(d => (
-                <span key={d} className="w-1.5 h-1.5 rounded-full bg-[#CCC] animate-bounce"
+                <span key={d} className="w-2 h-2 rounded-full bg-[#CCC] animate-bounce"
                   style={{ animationDelay: `${d}ms` }} />
               ))}
             </div>
-            <span className="text-sm text-[#999]">正在分析分歧…</span>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     )
   }
@@ -92,7 +87,38 @@ export default function ConclusionSection({
   const { disputes, conclusion } = analysis
 
   return (
-    <div className="mt-6 space-y-6">
+    <div className="flex items-start gap-3 mt-2">
+      {/* 主持人头像 */}
+      <div className="shrink-0 w-9 h-9 rounded-full bg-[#0D0D0D] flex items-center justify-center text-white text-xs font-bold mt-0.5 select-none">
+        主
+      </div>
+
+      <div className="flex-1 min-w-0 space-y-4">
+        {/* 主持人标题 */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-semibold text-[#0D0D0D]">主持人</span>
+            <span className="text-xs text-[#BBB]">Moderator</span>
+          </div>
+          <button
+            onClick={() => copy(getConclusionText())}
+            className="p-1 rounded text-[#CCC] hover:text-[#888] transition-colors"
+            title="复制结论"
+          >
+            {copied ? (
+              <svg className="w-3.5 h-3.5 text-[#4ADE80]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+              </svg>
+            ) : (
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <rect x="9" y="9" width="13" height="13" rx="2" strokeWidth="1.8" />
+                <path strokeWidth="1.8" d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
+              </svg>
+            )}
+          </button>
+        </div>
+
+    <div className="space-y-4">
       {/* 分歧区 */}
       {disputes.length > 0 && (
         <div className="space-y-3">
@@ -104,27 +130,9 @@ export default function ConclusionSection({
       {/* 结论区 */}
       <div className="rounded-2xl border border-[#0D0D0D22] bg-[#0D0D0D] text-white overflow-hidden">
         <div className="px-4 sm:px-5 pt-5 pb-4 space-y-4">
-          {/* Verdict + 复制 */}
+          {/* Verdict */}
           <div>
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-[10px] font-semibold uppercase tracking-widest text-[#888]">主持人判断</p>
-              <button
-                onClick={() => copy(getConclusionText())}
-                className="p-1 rounded-md text-[#555] hover:text-white hover:bg-white/10 transition-all"
-                title="复制结论"
-              >
-                {copied ? (
-                  <svg className="w-3.5 h-3.5 text-[#4ADE80]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-                  </svg>
-                ) : (
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <rect x="9" y="9" width="13" height="13" rx="2" strokeWidth="1.8" />
-                    <path strokeWidth="1.8" d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
-                  </svg>
-                )}
-              </button>
-            </div>
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-[#888] mb-2">主持人判断</p>
             <div className="text-[15px] font-medium leading-relaxed text-white">
               <Md>{conclusion.verdict}</Md>
             </div>
@@ -190,6 +198,8 @@ export default function ConclusionSection({
             </div>
           </div>
         </div>
+      </div>
+    </div>
       </div>
     </div>
   )

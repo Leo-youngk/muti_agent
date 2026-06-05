@@ -2,9 +2,9 @@
 
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import Sidebar from '@/components/Sidebar'
+import IOSInstallBanner from '@/components/IOSInstallBanner'
 import ChatView from '@/components/ChatView'
 import InputBar from '@/components/InputBar'
-import ModelSelector from '@/components/ModelSelector'
 import SettingsModal from '@/components/SettingsModal'
 import type { AppSettings, AdvisorId } from '@/lib/types'
 import { loadSettings, saveSettings, threadToMarkdown, downloadMarkdown } from '@/lib/storage'
@@ -29,9 +29,8 @@ export default function ChatApp() {
     return localStorage.getItem('advisor_model') || s.defaultModel
   })
 
-  // ── 当前活跃顾问列表（内置 + 自定义，去除隐藏）───────────────────────────────
   const activeAdvisors = useMemo(() => getAllAdvisors(settings), [settings])
-  const advisorMap = useMemo(() => getAdvisorMap(settings), [settings])
+  const advisorMap     = useMemo(() => getAdvisorMap(settings), [settings])
 
   // ── Streaming ───────────────────────────────────────────────────────────────
   const {
@@ -40,15 +39,16 @@ export default function ChatApp() {
     handleStop, handleFollowUp,
     handleSubmit: rawSubmit,
     handleRetryAdvisor,
+    handleDebate: rawDebate,
   } = useStreaming(updateThread, updatePanel, isStreamingRef)
 
-  // ── UI 状态 ──────────────────────────────────────────────────────────────────
+  // ── UI ───────────────────────────────────────────────────────────────────────
   const [sidebarOpen, setSidebarOpen] = useState(() =>
-    typeof window !== 'undefined' ? window.innerWidth >= 768 : true
+    typeof window !== 'undefined' ? window.innerWidth >= 768 : false
   )
   const [settingsOpen, setSettingsOpen] = useState(false)
 
-  // ── Settings handlers ────────────────────────────────────────────────────────
+  // ── Handlers ─────────────────────────────────────────────────────────────────
   const handleModelChange = useCallback((m: string) => {
     setSelectedModel(m)
     localStorage.setItem('advisor_model', m)
@@ -60,12 +60,10 @@ export default function ChatApp() {
     setSelectedModel(localStorage.getItem('advisor_model') || s.defaultModel)
   }, [])
 
-  // ── Submit wrapper ────────────────────────────────────────────────────────────
   const handleSubmit = useCallback((task: string) => {
     rawSubmit(task, activeId, threads, selectedModel, settings, activeAdvisors)
   }, [rawSubmit, activeId, threads, selectedModel, settings, activeAdvisors])
 
-  // ── Regenerate ──────────────────────────────────────────────────────────────
   const submitRef = useRef(handleSubmit)
   useEffect(() => { submitRef.current = handleSubmit }, [handleSubmit])
 
@@ -78,79 +76,98 @@ export default function ChatApp() {
     submitRef.current(lastUserMsg.content)
   }, [isStreaming, threads, activeId])
 
-  // ── Retry single advisor ────────────────────────────────────────────────────
   const handleRetry = useCallback((advisorId: AdvisorId) => {
     const thread = threads.find(t => t.id === activeId)
     if (!thread) return
     const lastPanel = [...thread.messages].reverse().find(m => m.role === 'panel')
-    const lastUser = [...thread.messages].reverse().find(m => m.role === 'user')
+    const lastUser  = [...thread.messages].reverse().find(m => m.role === 'user')
     if (!lastPanel || !lastUser) return
     handleRetryAdvisor(activeId, lastPanel.id, advisorId, lastUser.content, settings, selectedModel, thread.messages)
   }, [threads, activeId, handleRetryAdvisor, settings, selectedModel])
 
-  // ── Export ──────────────────────────────────────────────────────────────────
+  const handleDebate = useCallback(() => {
+    rawDebate(activeId, threads, selectedModel, settings, activeAdvisors)
+  }, [rawDebate, activeId, threads, selectedModel, settings, activeAdvisors])
+
   const handleExport = useCallback(() => {
     const thread = threads.find(t => t.id === activeId)
     if (!thread) return
     downloadMarkdown(`顾问团_${thread.title.slice(0, 20)}.md`, threadToMarkdown(thread))
   }, [threads, activeId])
 
+  // 移动端标题：截短显示当前对话
+  const headerTitle = activeThread?.title
+    ? (activeThread.title.length > 14 ? activeThread.title.slice(0, 14) + '…' : activeThread.title)
+    : '顾问团'
+
   return (
     <AdvisorProvider value={advisorMap}>
-      <div className="flex h-screen overflow-hidden bg-white relative">
-        {/* Mobile backdrop */}
+      <div className="flex overflow-hidden bg-white relative" style={{ height: '100dvh' }}>
+
+        {/* ── 遮罩 ── */}
         {sidebarOpen && (
           <div
-            className="md:hidden fixed inset-0 bg-black/20 z-30"
+            className="md:hidden fixed inset-0 bg-black/40 z-30 transition-opacity"
             onClick={() => setSidebarOpen(false)}
           />
         )}
 
-        {/* Sidebar */}
+        {/* ── 侧边栏 ── */}
         <aside className={[
           'fixed top-0 left-0 h-full z-40 md:relative md:z-auto flex flex-col',
-          'transition-all duration-200',
-          sidebarOpen
-            ? 'w-64 translate-x-0'
-            : 'w-0 -translate-x-full md:translate-x-0 overflow-hidden',
+          'transition-transform duration-300 ease-in-out',
+          sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0',
+          sidebarOpen ? 'shadow-2xl md:shadow-none' : '',
         ].join(' ')}>
           <Sidebar
             threads={threads}
             activeId={activeId}
             onSelectThread={id => {
               setActiveId(id)
-              if (typeof window !== 'undefined' && window.innerWidth < 768) setSidebarOpen(false)
+              if (window.innerWidth < 768) setSidebarOpen(false)
             }}
             onNewThread={newThread}
             onDeleteThread={deleteThread}
             onRenameThread={renameThread}
             onClose={() => setSidebarOpen(false)}
+            selectedModel={selectedModel}
+            onModelChange={handleModelChange}
+            onSettingsOpen={() => setSettingsOpen(true)}
+            isStreaming={isStreaming}
+            providers={settings.providers ?? []}
           />
         </aside>
 
-        {/* Main */}
+        {/* ── 主区域 ── */}
         <main className="flex flex-col flex-1 min-w-0 overflow-hidden">
-          <header className="h-14 shrink-0 border-b border-[#EBEBEB] flex items-center gap-3 px-4">
+
+          {/* ── Header ── */}
+          <header
+            className="shrink-0 flex items-center justify-between px-3 sm:px-4 border-b border-[#EBEBEB] bg-white"
+            style={{ minHeight: '3.25rem' }}
+          >
+            {/* 左：菜单 */}
             <button
               onClick={() => setSidebarOpen(v => !v)}
-              className="p-2 rounded-lg text-[#888] hover:bg-[#F0F0F0] transition-colors shrink-0"
-              title={sidebarOpen ? '收起侧栏' : '展开侧栏'}
+              className="p-2 rounded-xl text-[#888] hover:bg-[#F0F0F0] active:bg-[#E8E8E8] transition-colors"
             >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M4 6h16M4 12h16M4 18h16" />
               </svg>
             </button>
 
-            <span className="text-sm font-medium text-[#555] flex-1 min-w-0 truncate">
-              {activeThread?.title ?? '顾问团'}
+            {/* 中：标题 */}
+            <span className="text-sm font-semibold text-[#0D0D0D] truncate flex-1 text-center mx-2">
+              {headerTitle}
             </span>
 
-            <div className="flex items-center gap-1 shrink-0">
+            {/* 右：操作 */}
+            <div className="flex items-center gap-0.5">
               {(activeThread?.messages.length ?? 0) > 0 && (
                 <button
                   onClick={handleExport}
-                  className="p-2 rounded-lg text-[#888] hover:bg-[#F0F0F0] transition-colors"
-                  title="导出对话 (.md)"
+                  className="p-2 rounded-xl text-[#888] hover:bg-[#F0F0F0] transition-colors"
+                  title="导出对话"
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
@@ -158,39 +175,41 @@ export default function ChatApp() {
                   </svg>
                 </button>
               )}
-
-              <ModelSelector value={selectedModel} onChange={handleModelChange} disabled={isStreaming} />
-
               <button
-                onClick={() => setSettingsOpen(true)}
-                className="p-2 rounded-lg text-[#888] hover:bg-[#F0F0F0] transition-colors"
-                title="设置"
+                onClick={newThread}
+                disabled={isStreaming}
+                className="p-2 rounded-xl text-[#888] hover:bg-[#F0F0F0] active:bg-[#E8E8E8] transition-colors disabled:opacity-30"
+                title="新建对话"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                    d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                    d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                 </svg>
               </button>
             </div>
           </header>
 
+          {/* ── 错误提示 ── */}
           {error && (
-            <div className="mx-6 mt-4 px-4 py-3 bg-[#FFF5F5] border border-[#FFCDD2] rounded-xl text-sm text-[#C62828] flex items-start gap-2">
+            <div className="mx-4 mt-3 px-4 py-3 bg-[#FFF5F5] border border-[#FFCDD2] rounded-2xl text-sm text-[#C62828] flex items-start gap-2">
               <span className="shrink-0">⚠</span>
-              <span>{error}</span>
-              <button onClick={() => setError(null)} className="ml-auto shrink-0 text-[#C62828]">✕</button>
+              <span className="flex-1">{error}</span>
+              <button onClick={() => setError(null)} className="shrink-0 text-[#C62828]">✕</button>
             </div>
           )}
 
+          {/* ── 对话区 ── */}
           <ChatView
             messages={activeThread?.messages ?? []}
             onFollowUp={handleFollowUp}
             onRegenerate={handleRegenerate}
             onRetryAdvisor={handleRetry}
             onExamplePrompt={handleSubmit}
+            onDebate={handleDebate}
             isStreaming={isStreaming}
           />
+
+          {/* ── 输入栏 ── */}
           <InputBar
             key={activeId}
             onSubmit={handleSubmit}
@@ -201,6 +220,7 @@ export default function ChatApp() {
           />
         </main>
 
+        {/* ── 设置弹窗 ── */}
         {settingsOpen && (
           <SettingsModal
             settings={settings}
@@ -209,6 +229,8 @@ export default function ChatApp() {
           />
         )}
       </div>
+
+      <IOSInstallBanner />
     </AdvisorProvider>
   )
 }
