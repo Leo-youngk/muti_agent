@@ -268,7 +268,7 @@ export function useStreaming(
             ? settings.customProfiles : undefined,
           targetAdvisor: capturedTarget ?? undefined,
           previousJudgments: previousJudgments.length > 0 ? previousJudgments : undefined,
-          followUpAnalysis: isFollowUp,
+          followUpAnalysis: false,
           customAdvisors: settings.customAdvisors?.length ? settings.customAdvisors : undefined,
           hiddenAdvisors: settings.hiddenAdvisors?.length ? settings.hiddenAdvisors : undefined,
         }),
