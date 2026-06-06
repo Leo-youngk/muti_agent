@@ -339,15 +339,19 @@ export async function POST(request: Request) {
         const validEntries = Object.entries(completedJudgments).filter(([, j]) => j != null)
         if (validEntries.length === 0) return
 
+        // 紧凑 JSON — 减少 prompt token 数
         const judgmentsText = validEntries
-          .map(([id, j]) => `【${id}】\n${JSON.stringify(j, null, 2)}`).join('\n\n')
+          .map(([, j]) => `【${j.advisor}】立场:${j.stance} | 判断:${j.core_judgment} | 推理:${j.reasoning} | 批评:${j.criticism} | 盲点:${j.blind_spot}`).join('\n\n')
         send({ event: 'analysis_start' })
 
-        for (let attempt = 0; attempt <= 2; attempt++) {
-          if (attempt > 0) await sleep(1500 + 1500 * attempt)
+        // 分析只需短输出，用更小的 max_tokens 加速生成
+        const analysisMaxTokens = Math.min(maxTokens, 2048)
+
+        for (let attempt = 0; attempt <= 1; attempt++) {
+          if (attempt > 0) await sleep(1500)
           try {
             const analysisStream = await client.chat.completions.create({
-              model, temperature: 0.7, max_tokens: maxTokens, stream: true,
+              model, temperature: 0.5, max_tokens: analysisMaxTokens, stream: true,
               messages: [
                 { role: 'system', content: buildCrossAnalysisPrompt(judgmentsText) },
                 { role: 'user', content: `用户问题：${task}` },
@@ -361,7 +365,7 @@ export async function POST(request: Request) {
             send({ event: 'analysis_complete', analysis: parseJSON<CrossAnalysis>(accumulated) })
             break
           } catch (err) {
-            if (attempt === 2) send({ event: 'analysis_complete', analysis: null, error: String(err) })
+            if (attempt === 1) send({ event: 'analysis_complete', analysis: null, error: String(err) })
           }
         }
       }
@@ -372,9 +376,8 @@ export async function POST(request: Request) {
           const debateJudgments = body.allJudgments
           const completedDebate: Record<string, AdvisorJudgment> = {}
 
-          // 错开启动辩论
-          const debatePromises = activeAdvisors.map(async (advisor, idx) => {
-            if (idx > 0) await sleep(100 * idx)
+          // 全部同时启动辩论
+          const debatePromises = activeAdvisors.map(async (advisor) => {
             const profile = customProfiles[advisor.id] || advisor.profile
             const debatePrompt = buildDebateSystemPrompt(profile, debateJudgments, advisor.id)
             const judgment = await runAdvisor(advisor, { overrideSystemPrompt: debatePrompt })
@@ -415,15 +418,15 @@ export async function POST(request: Request) {
         const completedJudgments: Record<string, AdvisorJudgment> = {}
         let doneCount = 0
         const total = activeAdvisors.length
-        const FAST_THRESHOLD = Math.max(1, total - 1)
-        const STRAGGLER_TIMEOUT = 4_000
+        // 2个完成就可以开始分析（不必等到 n-1）
+        const FAST_THRESHOLD = Math.min(2, total)
+        const STRAGGLER_TIMEOUT = 2_000
 
         let analysisResolve: (() => void) | null = null
         const analysisGate = new Promise<void>(r => { analysisResolve = r })
 
-        // 错开启动：每个顾问间隔 100ms，减少首 token 等待
-        const advisorPromises = activeAdvisors.map(async (advisor, idx) => {
-          if (idx > 0) await sleep(100 * idx)
+        // 全部同时启动，不再错开
+        const advisorPromises = activeAdvisors.map(async (advisor) => {
           const judgment = await runAdvisor(advisor)
           if (judgment) completedJudgments[advisor.id] = judgment
           doneCount++
@@ -437,14 +440,11 @@ export async function POST(request: Request) {
           return { advisorId: advisor.id, judgment }
         })
 
-        // 等待分析门打开（全部完成 or 3/4完成+8s超时）
+        // 等分析门打开（全部完成，或2个完成+2s后启动）
         await analysisGate
 
-        // ── 交叉分析（可能有 1 个顾问还在跑，但不等了）─────────────────
-        // 分析和最后一个顾问并行执行
+        // 分析和剩余顾问并行
         const analysisPromise = runCrossAnalysis(completedJudgments)
-
-        // 等分析完 + 所有顾问完（如果最后一个还在跑，前端已经收到分析结果了）
         await Promise.all([analysisPromise, ...advisorPromises])
 
         send({ event: 'complete' })

@@ -10,6 +10,37 @@ function safe<T>(fn: () => T, fallback: T): T {
   try { return fn() } catch { return fallback }
 }
 
+/** 迁移旧版 CrossAnalysis（conclusion.verdict → verdict）和 Dispute 格式 */
+function migrateAnalysis(threads: Thread[]): Thread[] {
+  return threads.map(t => ({
+    ...t,
+    messages: t.messages.map(m => {
+      if (!m.panel?.analysis) return m
+      const a = m.panel.analysis as any
+      // 已经是新格式
+      if (a.verdict && !a.conclusion) return m
+      // 旧格式：从 conclusion 中提取
+      const c = a.conclusion
+      if (!c) return m
+      const migrated = {
+        disputes: (a.disputes || []).map((d: any) => ({
+          between: d.between,
+          clash: d.clash || d.topic || '',
+          a_says: d.a_says || d.a_position || '',
+          b_says: d.b_says || d.b_position || '',
+          trust: d.trust || d.who_to_trust || '',
+          why: d.why || d.trust_reason || '',
+        })),
+        verdict: c.verdict || '',
+        listen_to: c.top_voices || [],
+        blind_spot: c.biggest_blind_spot || '',
+        do_next: c.next_steps || [],
+      }
+      return { ...m, panel: { ...m.panel, analysis: migrated } }
+    }),
+  }))
+}
+
 /** 存入 localStorage 前清除 streaming 冗余数据，减少存储体积 */
 function stripStreamingData(threads: Thread[]): Thread[] {
   return threads.map(t => ({
@@ -33,24 +64,24 @@ export async function loadThreads(): Promise<Thread[]> {
   try {
     // 先尝试 IndexedDB
     const data = await get<Thread[]>(THREADS_KEY)
-    if (data && data.length > 0) return data
+    if (data && data.length > 0) return migrateAnalysis(data)
 
     // 回退：从旧 localStorage 迁移
     const raw = localStorage.getItem('advisor_threads_v2')
     if (raw) {
       const threads = JSON.parse(raw) as Thread[]
       if (threads.length > 0) {
-        await set(THREADS_KEY, stripStreamingData(threads))
-        localStorage.removeItem('advisor_threads_v2')   // 迁移完成，清理旧数据
-        return threads
+        const migrated = migrateAnalysis(threads)
+        await set(THREADS_KEY, stripStreamingData(migrated))
+        localStorage.removeItem('advisor_threads_v2')
+        return migrated
       }
     }
     return []
   } catch {
-    // IndexedDB 不可用时回退到 localStorage
     return safe(() => {
       const raw = localStorage.getItem('advisor_threads_v2') || localStorage.getItem(THREADS_KEY)
-      return raw ? (JSON.parse(raw) as Thread[]) : []
+      return raw ? migrateAnalysis(JSON.parse(raw) as Thread[]) : []
     }, [])
   }
 }
@@ -70,7 +101,7 @@ export async function saveThreads(threads: Thread[]): Promise<void> {
 export function loadThreadsSync(): Thread[] {
   return safe(() => {
     const raw = localStorage.getItem('advisor_threads_v2') || localStorage.getItem(THREADS_KEY)
-    return raw ? (JSON.parse(raw) as Thread[]) : []
+    return raw ? migrateAnalysis(JSON.parse(raw) as Thread[]) : []
   }, [])
 }
 
@@ -181,12 +212,12 @@ export function threadToMarkdown(thread: Thread): string {
           }
           lines.push('')
         }
-        lines.push(`**判断**：${analysis.verdict}`)
-        lines.push(`**最值得听**：${analysis.listen_to.join('、')}`)
-        lines.push(`**集体盲点**：${analysis.blind_spot}`)
+        lines.push(`**判断**：${analysis.verdict || ''}`)
+        lines.push(`**最值得听**：${(analysis.listen_to || []).join('、')}`)
+        lines.push(`**集体盲点**：${analysis.blind_spot || ''}`)
         lines.push('')
         lines.push('**马上该做**')
-        analysis.do_next.forEach((s, i) => lines.push(`${i + 1}. ${s}`))
+        ;(analysis.do_next || []).forEach((s, i) => lines.push(`${i + 1}. ${s}`))
         lines.push('')
       }
 
