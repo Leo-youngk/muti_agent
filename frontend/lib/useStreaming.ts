@@ -57,12 +57,18 @@ function buildHistory(messages: Message[], targetAdvisorId?: string | null): His
   return result.slice(targetAdvisorId ? -8 : -6)
 }
 
+/** 收集所有面板中的最新判断（后出的覆盖先出的），保证追问时上下文完整 */
 export function buildPreviousJudgments(messages: Message[]): PreviousJudgment[] {
-  const recentPanel = [...messages].reverse().find(m => m.role === 'panel' && m.panel)
-  if (!recentPanel?.panel) return []
-  return Object.entries(recentPanel.panel.judgments)
-    .filter(([, j]) => j != null)
-    .map(([id, j]) => ({ advisorId: id as AdvisorId, judgment: j! }))
+  const merged: Record<string, AdvisorJudgment> = {}
+  for (const msg of messages) {
+    if (msg.role === 'panel' && msg.panel) {
+      for (const [id, j] of Object.entries(msg.panel.judgments)) {
+        if (j) merged[id] = j
+      }
+    }
+  }
+  return Object.entries(merged)
+    .map(([id, j]) => ({ advisorId: id as AdvisorId, judgment: j }))
 }
 
 // ─── Token 批量刷新（减少 React re-render）─────────────────────────────────────
