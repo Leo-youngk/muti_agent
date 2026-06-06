@@ -41,16 +41,14 @@ export default function ConclusionSection({
 
   const getConclusionText = () => {
     if (!analysis) return ''
-    const c = analysis.conclusion
     return [
-      `主持人判断：${c.verdict}`,
-      `核心矛盾：${c.core_tension}`,
-      `最值得听：${c.top_voices.join('、')} — ${c.top_voices_reason}`,
-      c.reference_only.length > 0 ? `仅供参考：${c.reference_only.join('、')} — ${c.reference_only_reason}` : '',
-      `集体盲点：${c.biggest_blind_spot}`,
-      `建议行动：\n${c.next_steps.map((s, i) => `${i + 1}. ${s}`).join('\n')}`,
-    ].filter(Boolean).join('\n\n')
+      `主持人判断：${analysis.verdict}`,
+      `最值得听：${analysis.listen_to.join('、')}`,
+      `集体盲点：${analysis.blind_spot}`,
+      `下一步：\n${analysis.do_next.map((s, i) => `${i + 1}. ${s}`).join('\n')}`,
+    ].join('\n\n')
   }
+
   if (status === 'idle') return null
 
   if (status === 'thinking') {
@@ -84,8 +82,6 @@ export default function ConclusionSection({
 
   if (!analysis) return null
 
-  const { disputes, conclusion } = analysis
-
   return (
     <div className="flex items-start gap-3 mt-2">
       {/* 主持人头像 */}
@@ -118,88 +114,64 @@ export default function ConclusionSection({
           </button>
         </div>
 
-    <div className="space-y-4">
-      {/* 分歧区 */}
-      {disputes.length > 0 && (
-        <div className="space-y-3">
-          <p className="text-[11px] font-semibold uppercase tracking-widest text-[#BBB]">核心分歧</p>
-          {disputes.map((d, i) => <DisputeCard key={i} dispute={d} />)}
-        </div>
-      )}
-
-      {/* 结论区 */}
-      <div className="rounded-2xl border border-[#0D0D0D22] bg-[#0D0D0D] text-white overflow-hidden">
-        <div className="px-4 sm:px-5 pt-5 pb-4 space-y-4">
-          {/* Verdict */}
-          <div>
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-[#888] mb-2">主持人判断</p>
-            <div className="text-[15px] font-medium leading-relaxed text-white">
-              <Md>{conclusion.verdict}</Md>
+        <div className="space-y-4">
+          {/* 分歧区 */}
+          {analysis.disputes.length > 0 && (
+            <div className="space-y-3">
+              <p className="text-[11px] font-semibold uppercase tracking-widest text-[#BBB]">核心分歧</p>
+              {analysis.disputes.map((d, i) => <DisputeCard key={i} dispute={d} />)}
             </div>
-          </div>
+          )}
 
-          {/* 核心矛盾 */}
-          <div>
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-[#888] mb-1">核心矛盾</p>
-            <div className="text-sm text-[#CCC] leading-relaxed">
-              <Md>{conclusion.core_tension}</Md>
-            </div>
-          </div>
-
-          {/* 最值得听 */}
-          <div className="flex flex-col sm:flex-row gap-4">
-            <div className="flex-1">
-              <p className="text-[10px] font-semibold uppercase tracking-widest text-[#888] mb-2">当前场景最值得听</p>
-              <div className="flex flex-wrap gap-1.5 mb-1.5">
-                {conclusion.top_voices.map(name => (
-                  <span key={name} className="text-xs font-semibold px-2.5 py-1 rounded-full"
-                    style={{ background: `${getColor(name)}33`, color: getColor(name) }}>
-                    {name}
-                  </span>
-                ))}
+          {/* 结论区 */}
+          <div className="rounded-2xl border border-[#0D0D0D22] bg-[#0D0D0D] text-white overflow-hidden">
+            <div className="px-4 sm:px-5 pt-5 pb-4 space-y-4">
+              {/* Verdict */}
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-widest text-[#888] mb-2">主持人判断</p>
+                <div className="text-[15px] font-medium leading-relaxed text-white">
+                  <Md>{analysis.verdict}</Md>
+                </div>
               </div>
-              <p className="text-xs text-[#888]">{conclusion.top_voices_reason}</p>
-            </div>
-            {conclusion.reference_only.length > 0 && (
-              <div className="flex-1">
-                <p className="text-[10px] font-semibold uppercase tracking-widest text-[#888] mb-2">仅供参考</p>
-                <div className="flex flex-wrap gap-1.5 mb-1.5">
-                  {conclusion.reference_only.map(name => (
-                    <span key={name} className="text-xs font-semibold px-2.5 py-1 rounded-full bg-[#333] text-[#999]">
+
+              {/* 最值得听 */}
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-widest text-[#888] mb-2">最值得听</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {analysis.listen_to.map(name => (
+                    <span key={name} className="text-xs font-semibold px-2.5 py-1 rounded-full"
+                      style={{ background: `${getColor(name)}33`, color: getColor(name) }}>
                       {name}
                     </span>
                   ))}
                 </div>
-                <p className="text-xs text-[#888]">{conclusion.reference_only_reason}</p>
               </div>
-            )}
-          </div>
 
-          {/* 集体盲点 */}
-          <div className="rounded-xl bg-[#1A1A1A] px-4 py-3 border border-[#333]">
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-[#F59E0B] mb-1">集体盲点</p>
-            <div className="text-sm text-[#CCC] leading-relaxed">
-              <Md>{conclusion.biggest_blind_spot}</Md>
-            </div>
-          </div>
-
-          {/* 下一步 */}
-          <div>
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-[#888] mb-2">建议行动</p>
-            <div className="space-y-1.5">
-              {conclusion.next_steps.map((step, i) => (
-                <div key={i} className="flex items-start gap-2.5">
-                  <span className="text-xs font-bold text-[#555] mt-0.5 shrink-0">{i + 1}.</span>
-                  <div className="text-sm text-[#CCC] leading-relaxed">
-                    <Md>{step}</Md>
-                  </div>
+              {/* 集体盲点 */}
+              <div className="rounded-xl bg-[#1A1A1A] px-4 py-3 border border-[#333]">
+                <p className="text-[10px] font-semibold uppercase tracking-widest text-[#F59E0B] mb-1">集体盲点</p>
+                <div className="text-sm text-[#CCC] leading-relaxed">
+                  <Md>{analysis.blind_spot}</Md>
                 </div>
-              ))}
+              </div>
+
+              {/* 下一步 */}
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-widest text-[#888] mb-2">马上该做</p>
+                <div className="space-y-1.5">
+                  {analysis.do_next.map((step, i) => (
+                    <div key={i} className="flex items-start gap-2.5">
+                      <span className="text-xs font-bold text-[#555] mt-0.5 shrink-0">{i + 1}.</span>
+                      <div className="text-sm text-[#CCC] leading-relaxed">
+                        <Md>{step}</Md>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
         </div>
-      </div>
-    </div>
       </div>
     </div>
   )

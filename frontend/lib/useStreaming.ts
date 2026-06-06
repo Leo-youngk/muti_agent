@@ -46,7 +46,7 @@ function buildHistory(messages: Message[], targetAdvisorId?: string | null): His
       }
 
       if (analysis) {
-        parts.push(`[主持人结论] ${analysis.conclusion.verdict}`)
+        parts.push(`[主持人结论] ${analysis.verdict}`)
       }
       if (parts.length > 0) {
         result.push({ role: 'assistant', content: parts.join('\n\n') })

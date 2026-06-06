@@ -169,29 +169,24 @@ export function threadToMarkdown(thread: Thread): string {
       }
 
       if (analysis) {
-        lines.push('### 主持人综合')
+        lines.push('### 主持人')
         lines.push('')
         if (analysis.disputes?.length > 0) {
           lines.push('**核心分歧**')
           for (const d of analysis.disputes) {
-            lines.push(`- **${d.between[0]} vs ${d.between[1]}**：${d.topic}`)
-            lines.push(`  - ${d.between[0]}：${d.a_position}`)
-            lines.push(`  - ${d.between[1]}：${d.b_position}`)
-            lines.push(`  - 更信：${d.who_to_trust} — ${d.trust_reason}`)
+            lines.push(`- **${d.between[0]} vs ${d.between[1]}**：${d.clash}`)
+            lines.push(`  - ${d.between[0]}：${d.a_says}`)
+            lines.push(`  - ${d.between[1]}：${d.b_says}`)
+            lines.push(`  - 听 ${d.trust}（${d.why}）`)
           }
           lines.push('')
         }
-        const c = analysis.conclusion
-        lines.push(`**主持人判断**：${c.verdict}`)
-        lines.push(`**核心矛盾**：${c.core_tension}`)
-        lines.push(`**最值得听**：${c.top_voices.join('、')} — ${c.top_voices_reason}`)
-        if (c.reference_only.length > 0) {
-          lines.push(`**仅供参考**：${c.reference_only.join('、')} — ${c.reference_only_reason}`)
-        }
-        lines.push(`**集体盲点**：${c.biggest_blind_spot}`)
+        lines.push(`**判断**：${analysis.verdict}`)
+        lines.push(`**最值得听**：${analysis.listen_to.join('、')}`)
+        lines.push(`**集体盲点**：${analysis.blind_spot}`)
         lines.push('')
-        lines.push('**建议行动**')
-        c.next_steps.forEach((s, i) => lines.push(`${i + 1}. ${s}`))
+        lines.push('**马上该做**')
+        analysis.do_next.forEach((s, i) => lines.push(`${i + 1}. ${s}`))
         lines.push('')
       }
 

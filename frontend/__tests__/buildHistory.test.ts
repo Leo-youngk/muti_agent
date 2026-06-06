@@ -17,7 +17,7 @@ function buildHistory(messages: Message[]): HistoryMessage[] {
         parts.push(`[上一轮顾问立场]\n${advisorLines.join('\n')}`)
       }
       if (analysis) {
-        parts.push(`[主持人结论] ${analysis.conclusion.verdict}`)
+        parts.push(`[主持人结论] ${analysis.verdict}`)
       }
       if (parts.length > 0) {
         result.push({ role: 'assistant', content: parts.join('\n\n') })
@@ -41,14 +41,11 @@ const mockPanel = (judgments: Partial<Record<AdvisorId, AdvisorJudgment>>, verdi
   analysisStatus: 'done',
   analysisStream: '',
   analysis: verdict ? {
-    question_restate: 'q',
     disputes: [],
-    conclusion: {
-      core_tension: 't', top_voices: [], top_voices_reason: '',
-      reference_only: [], reference_only_reason: '',
-      biggest_blind_spot: '', worth_continuing: true,
-      verdict, next_steps: [],
-    },
+    verdict,
+    listen_to: [],
+    blind_spot: '',
+    do_next: [],
   } as CrossAnalysis : undefined,
 })
 

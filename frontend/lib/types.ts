@@ -23,28 +23,19 @@ export interface AdvisorJudgment {
 
 export interface Dispute {
   between: [string, string]
-  topic: string
-  a_position: string
-  b_position: string
-  why_they_clash: string
-  who_to_trust: string
-  trust_reason: string
+  clash: string
+  a_says: string
+  b_says: string
+  trust: string
+  why: string
 }
 
 export interface CrossAnalysis {
-  question_restate: string
   disputes: Dispute[]
-  conclusion: {
-    core_tension: string
-    top_voices: string[]
-    top_voices_reason: string
-    reference_only: string[]
-    reference_only_reason: string
-    biggest_blind_spot: string
-    worth_continuing: boolean
-    verdict: string
-    next_steps: string[]
-  }
+  verdict: string
+  listen_to: string[]
+  blind_spot: string
+  do_next: string[]
 }
 
 export interface PanelResult {
