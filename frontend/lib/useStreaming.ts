@@ -135,7 +135,20 @@ export function useStreaming(
 
   const handleStop = useCallback(() => {
     abortControllerRef.current?.abort()
-  }, [])
+    // 立即把所有 thinking 状态清除，停止动画
+    if (currentPanelRef.current) {
+      const { tid, msgId } = currentPanelRef.current
+      updatePanel(tid, msgId, p => ({
+        ...p,
+        advisorStatus: Object.fromEntries(
+          Object.entries(p.advisorStatus).map(([id, s]) =>
+            [id, s === 'thinking' ? 'idle' : s]
+          )
+        ) as Record<string, import('./types').AdvisorStatus>,
+        analysisStatus: p.analysisStatus === 'thinking' ? 'idle' : p.analysisStatus,
+      }))
+    }
+  }, [updatePanel])
 
   const handleFollowUp = useCallback((advisorId: AdvisorId) => {
     setTargetAdvisor(advisorId)

@@ -13,11 +13,12 @@ export interface AdvisorJudgment {
   stance: Stance
   core_judgment: string
   reasoning: string
-  focus: string
   criticism: string
-  demand: string
-  approach: string
   blind_spot: string
+  /** @deprecated 已从 prompt 移除，旧数据可能包含 */
+  focus?: string
+  demand?: string
+  approach?: string
 }
 
 export interface Dispute {

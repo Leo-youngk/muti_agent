@@ -9,36 +9,28 @@ export const maxDuration = 120
 // ─── Prompt 构建 ───────────────────────────────────────────────────────────────
 
 function buildAdvisorSystemPrompt(profile: string): string {
-  return `你是一个人物思维模拟系统。你的任务是完整还原以下人物——他的世界观、价值体系、思维习惯、语言风格——面对用户提出的任何问题时会如何回应。
-
-这个人物不只是某个领域的专家。他是一个完整的人，对世界有自己独特的理解。无论问题是关于创业、人生选择、人际关系、教育、健康、道德困境还是日常琐事，他都会用自己的一套思维方式来回应。
-
-你不是在"给建议"，你是在成为这个人——用他的价值观排序、他的直觉偏好、他的语言习惯、他会忽略的东西来思考。
+  return `你是人物思维模拟系统。还原以下人物的世界观、思维习惯、语言风格来回应用户问题。
 
 === 人物档案 ===
 ${profile}
 === 档案结束 ===
 
-要求：
-1. 你的判断必须有明确立场：支持、反对、或有条件支持。不允许"既有机会也有风险"式的骑墙。
-2. 你的语言风格必须匹配档案中描述的表达方式。
-3. 你的回应必须从这个人物独特的世界观出发，不能是通用建议。即使问题不在他的专业领域，他也有自己的看法——用他的思维方式去推导。
-4. 使用"以 XX 的思维方式，他大概率会……"这样的表述框架。不要写成"XX 说过……"或"XX 一定会……"。
-5. 所有输出内容必须使用简体中文，包括 JSON 字段的值。
-6. "stance" 字段必须从以下四个值中精确选一个，不得修改：支持、反对、有条件支持、需要更多信息
-7. 输出必须是纯 JSON，不要在 JSON 前后加任何文字或 markdown 标记。
+规则：
+1. 必须有明确立场，不骑墙
+2. 语言风格匹配人物档案
+3. 从此人独特世界观出发，不给通用建议
+4. 用"以 XX 的思维方式，他大概率会……"的框架
+5. 简体中文输出纯 JSON，无 markdown
+6. "stance" 从：支持、反对、有条件支持、需要更多信息 中选一个
 
-输出 JSON 格式（所有字段必须存在）：
+输出 JSON（所有字段必须存在）：
 {
   "advisor": "人物名",
   "stance": "支持 | 反对 | 有条件支持 | 需要更多信息",
-  "core_judgment": "一句话核心判断，用这个人物的口吻",
-  "reasoning": "3-5句话展开判断逻辑，要体现此人的思维方式和价值观",
-  "focus": "他会立刻抓住的关键问题是什么",
-  "criticism": "他最尖锐的批评，用他本人的风格表达",
-  "demand": "他会要求立刻做什么改变",
-  "approach": "如果他亲自处理这件事，会怎么切入",
-  "blind_spot": "他自己在这个问题上可能忽略或低估的东西"
+  "core_judgment": "一句话核心判断",
+  "reasoning": "3-5句展开逻辑",
+  "criticism": "最尖锐的批评",
+  "blind_spot": "他自己可能忽略的东西"
 }`
 }
 
@@ -203,11 +195,11 @@ function extractPartialAdvisorJudgment(
     stance,
     core_judgment: core,
     reasoning:     get('reasoning') || '（输出被中断，无法获取完整推理）',
-    focus:         get('focus')     || '—',
     criticism:     get('criticism') || '（未能完整生成）',
-    demand:        get('demand')    || '—',
-    approach:      get('approach')  || '—',
     blind_spot:    get('blind_spot')|| '—',
+    focus:         get('focus')     || undefined,
+    demand:        get('demand')    || undefined,
+    approach:      get('approach')  || undefined,
   }
 }
 
@@ -305,7 +297,7 @@ export async function POST(request: Request) {
         const userContent = task
 
         for (let attempt = 0; attempt <= 2; attempt++) {
-          if (attempt > 0) await sleep(1500 + 1500 * attempt)  // 3s, 4.5s — 对抗 rate limit
+          if (attempt > 0) await sleep(800 + 800 * attempt)  // 1.6s, 2.4s — 快速重试
 
           const perCallAbort = new AbortController()
           const timeoutId = setTimeout(() => perCallAbort.abort('per-advisor-timeout'), 60_000)
@@ -392,7 +384,7 @@ export async function POST(request: Request) {
 
           // 错开启动辩论
           const debatePromises = activeAdvisors.map(async (advisor, idx) => {
-            if (idx > 0) await sleep(300 * idx)
+            if (idx > 0) await sleep(100 * idx)
             const profile = customProfiles[advisor.id] || advisor.profile
             const debatePrompt = buildDebateSystemPrompt(profile, debateJudgments, advisor.id)
             const judgment = await runAdvisor(advisor, { overrideSystemPrompt: debatePrompt })
@@ -434,14 +426,14 @@ export async function POST(request: Request) {
         let doneCount = 0
         const total = activeAdvisors.length
         const FAST_THRESHOLD = Math.max(1, total - 1)
-        const STRAGGLER_TIMEOUT = 8_000
+        const STRAGGLER_TIMEOUT = 4_000
 
         let analysisResolve: (() => void) | null = null
         const analysisGate = new Promise<void>(r => { analysisResolve = r })
 
-        // 错开启动：每个顾问间隔 300ms，避免同时撞 rate limit
+        // 错开启动：每个顾问间隔 100ms，减少首 token 等待
         const advisorPromises = activeAdvisors.map(async (advisor, idx) => {
-          if (idx > 0) await sleep(300 * idx)
+          if (idx > 0) await sleep(100 * idx)
           const judgment = await runAdvisor(advisor)
           if (judgment) completedJudgments[advisor.id] = judgment
           doneCount++

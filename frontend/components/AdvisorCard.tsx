@@ -63,7 +63,16 @@ export default function AdvisorCard({
 
   const getJudgmentText = () => {
     if (!judgment) return ''
-    return `【${judgment.advisor}】${judgment.stance}\n核心判断：${judgment.core_judgment}\n推理：${judgment.reasoning}\n核心批评：${judgment.criticism}\n关注焦点：${judgment.focus}\n要求改变：${judgment.demand}\n如何切入：${judgment.approach}\n盲点：${judgment.blind_spot}`
+    return [
+      `【${judgment.advisor}】${judgment.stance}`,
+      `核心判断：${judgment.core_judgment}`,
+      `推理：${judgment.reasoning}`,
+      `核心批评：${judgment.criticism}`,
+      judgment.focus && `关注焦点：${judgment.focus}`,
+      judgment.demand && `要求改变：${judgment.demand}`,
+      judgment.approach && `如何切入：${judgment.approach}`,
+      `盲点：${judgment.blind_spot}`,
+    ].filter(Boolean).join('\n')
   }
 
   return (

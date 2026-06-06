@@ -161,9 +161,9 @@ export function threadToMarkdown(thread: Thread): string {
         lines.push('')
         lines.push(`**核心批评**：${j.criticism}`)
         lines.push('')
-        lines.push(`关注焦点：${j.focus}`)
-        lines.push(`要求改变：${j.demand}`)
-        lines.push(`如何切入：${j.approach}`)
+        if (j.focus) lines.push(`关注焦点：${j.focus}`)
+        if (j.demand) lines.push(`要求改变：${j.demand}`)
+        if (j.approach) lines.push(`如何切入：${j.approach}`)
         lines.push(`盲点：${j.blind_spot}`)
         lines.push('')
       }
