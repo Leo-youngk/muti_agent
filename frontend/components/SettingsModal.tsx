@@ -13,7 +13,7 @@ interface Props {
 // ─── Provider 预设模板 ────────────────────────────────────────────────────────
 
 const PROVIDER_PRESETS: { name: string; baseUrl: string; models: string[] }[] = [
-  { name: 'DeepSeek', baseUrl: 'https://api.deepseek.com/v1', models: ['deepseek-chat', 'deepseek-reasoner'] },
+  { name: 'DeepSeek', baseUrl: 'https://api.deepseek.com/v1', models: ['deepseek-v4-flash', 'deepseek-chat'] },
   { name: 'OpenAI', baseUrl: 'https://api.openai.com/v1', models: ['gpt-4o', 'gpt-4o-mini'] },
   { name: '硅基流动', baseUrl: 'https://api.siliconflow.cn/v1', models: [] },
   { name: '火山引擎', baseUrl: 'https://ark.cn-beijing.volces.com/api/v3', models: [] },

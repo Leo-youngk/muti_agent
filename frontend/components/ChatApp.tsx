@@ -144,7 +144,7 @@ export default function ChatApp() {
           {/* ── Header ── */}
           <header
             className="shrink-0 flex items-center justify-between px-3 sm:px-4 border-b border-[#EBEBEB] bg-white"
-            style={{ minHeight: '3.25rem' }}
+            style={{ minHeight: '3.25rem', paddingTop: 'env(safe-area-inset-top)' }}
           >
             {/* 左：菜单 */}
             <button

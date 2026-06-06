@@ -52,7 +52,7 @@ export default function Sidebar({
     >
       {/* ── 顶部 ── */}
       <div className="px-4 flex items-center justify-between border-b border-[#EBEBEB]"
-        style={{ minHeight: '3.5rem' }}>
+        style={{ minHeight: '3.5rem', paddingTop: 'env(safe-area-inset-top)' }}>
         <span className="text-base font-semibold tracking-tight text-[#0D0D0D]">顾问团</span>
         <button
           onClick={onClose}
