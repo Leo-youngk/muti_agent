@@ -41,11 +41,16 @@ export default function ConclusionSection({
 
   const getConclusionText = () => {
     if (!analysis) return ''
+    const _legacy = (analysis as any).conclusion
+    const _verdict = analysis.verdict || _legacy?.verdict || ''
+    const _listenTo: string[] = analysis.listen_to || _legacy?.top_voices || []
+    const _blindSpot = analysis.blind_spot || _legacy?.biggest_blind_spot || ''
+    const _doNext: string[] = analysis.do_next || _legacy?.next_steps || []
     return [
-      `主持人判断：${analysis.verdict}`,
-      `最值得听：${analysis.listen_to.join('、')}`,
-      `集体盲点：${analysis.blind_spot}`,
-      `下一步：\n${analysis.do_next.map((s, i) => `${i + 1}. ${s}`).join('\n')}`,
+      `主持人判断：${_verdict}`,
+      `最值得听：${_listenTo.join('、')}`,
+      `集体盲点：${_blindSpot}`,
+      `下一步：\n${_doNext.map((s, i) => `${i + 1}. ${s}`).join('\n')}`,
     ].join('\n\n')
   }
 
@@ -82,6 +87,14 @@ export default function ConclusionSection({
 
   if (!analysis) return null
 
+  // 兼容旧版数据格式（conclusion.verdict → verdict）
+  const legacy = (analysis as any).conclusion
+  const verdict = analysis.verdict || legacy?.verdict || ''
+  const listenTo: string[] = analysis.listen_to || legacy?.top_voices || []
+  const blindSpot = analysis.blind_spot || legacy?.biggest_blind_spot || ''
+  const doNext: string[] = analysis.do_next || legacy?.next_steps || []
+  const disputes = analysis.disputes || []
+
   return (
     <div className="flex items-start gap-3 mt-2">
       {/* 主持人头像 */}
@@ -116,10 +129,10 @@ export default function ConclusionSection({
 
         <div className="space-y-4">
           {/* 分歧区 */}
-          {analysis.disputes.length > 0 && (
+          {disputes.length > 0 && (
             <div className="space-y-3">
               <p className="text-[11px] font-semibold uppercase tracking-widest text-[#BBB]">核心分歧</p>
-              {analysis.disputes.map((d, i) => <DisputeCard key={i} dispute={d} />)}
+              {disputes.map((d, i) => <DisputeCard key={i} dispute={d} />)}
             </div>
           )}
 
@@ -130,7 +143,7 @@ export default function ConclusionSection({
               <div>
                 <p className="text-[10px] font-semibold uppercase tracking-widest text-[#888] mb-2">主持人判断</p>
                 <div className="text-[15px] font-medium leading-relaxed text-white">
-                  <Md>{analysis.verdict}</Md>
+                  <Md>{verdict}</Md>
                 </div>
               </div>
 
@@ -138,7 +151,7 @@ export default function ConclusionSection({
               <div>
                 <p className="text-[10px] font-semibold uppercase tracking-widest text-[#888] mb-2">最值得听</p>
                 <div className="flex flex-wrap gap-1.5">
-                  {analysis.listen_to.map(name => (
+                  {listenTo.map(name => (
                     <span key={name} className="text-xs font-semibold px-2.5 py-1 rounded-full"
                       style={{ background: `${getColor(name)}33`, color: getColor(name) }}>
                       {name}
@@ -151,7 +164,7 @@ export default function ConclusionSection({
               <div className="rounded-xl bg-[#1A1A1A] px-4 py-3 border border-[#333]">
                 <p className="text-[10px] font-semibold uppercase tracking-widest text-[#F59E0B] mb-1">集体盲点</p>
                 <div className="text-sm text-[#CCC] leading-relaxed">
-                  <Md>{analysis.blind_spot}</Md>
+                  <Md>{blindSpot}</Md>
                 </div>
               </div>
 
@@ -159,7 +172,7 @@ export default function ConclusionSection({
               <div>
                 <p className="text-[10px] font-semibold uppercase tracking-widest text-[#888] mb-2">马上该做</p>
                 <div className="space-y-1.5">
-                  {analysis.do_next.map((step, i) => (
+                  {doNext.map((step, i) => (
                     <div key={i} className="flex items-start gap-2.5">
                       <span className="text-xs font-bold text-[#555] mt-0.5 shrink-0">{i + 1}.</span>
                       <div className="text-sm text-[#CCC] leading-relaxed">
