@@ -87,7 +87,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
 }
 
 const LEGACY_PRESET_MODELS = [
-  'deepseek-v4-flash', 'qwen3.7-max',
+  'deepseek-v4-flash', 'qwen3.7-plus',
 ]
 
 export function loadSettings(): AppSettings {

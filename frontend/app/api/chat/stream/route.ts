@@ -244,6 +244,15 @@ export async function POST(request: Request) {
   const baseURL = rawBase || undefined
   const model = body.model?.trim() || process.env.AI_MODEL?.trim() || 'gpt-4o'
 
+  // 根据模型动态设置 max_tokens（不同模型上限不同）
+  function getMaxTokens(m: string): number {
+    if (m.startsWith('deepseek')) return 131072   // DeepSeek V4 Flash: 131K
+    if (m.startsWith('qwen'))    return 65536     // Qwen: 65K
+    if (m.startsWith('glm'))     return 16384     // GLM: 16K
+    return 16384                                  // 其他模型安全默认值
+  }
+  const maxTokens = getMaxTokens(model)
+
   if (baseURL) {
     try { new URL(baseURL) } catch {
       return Response.json({ error: `Invalid Base URL: "${baseURL}"` }, { status: 500 })
@@ -305,7 +314,7 @@ export async function POST(request: Request) {
           try {
             const stream = await client.chat.completions.create(
               {
-                model, temperature: 0.7, max_tokens: 131072, stream: true,
+                model, temperature: 0.7, max_tokens: maxTokens, stream: true,
                 messages: [
                   { role: 'system', content: systemPrompt },
                   ...history.map(h => ({ role: h.role as 'user' | 'assistant', content: h.content })),
@@ -356,7 +365,7 @@ export async function POST(request: Request) {
           if (attempt > 0) await sleep(1500 + 1500 * attempt)
           try {
             const analysisStream = await client.chat.completions.create({
-              model, temperature: 0.7, max_tokens: 131072, stream: true,
+              model, temperature: 0.7, max_tokens: maxTokens, stream: true,
               messages: [
                 { role: 'system', content: buildCrossAnalysisPrompt(judgmentsText) },
                 { role: 'user', content: `用户问题：${task}` },
