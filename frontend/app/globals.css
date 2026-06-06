@@ -9,16 +9,11 @@
 
 html, body {
   height: 100%;
-  /* iOS PWA: 防止橡皮筋滚动影响整体布局 */
+  overflow: hidden;
+  /* iOS PWA: 防止橡皮筋滚动和外框滑动 */
   overscroll-behavior: none;
-}
-
-/* iOS PWA standalone 模式下，body 占满整个屏幕含安全区 */
-@supports (padding-top: env(safe-area-inset-top)) {
-  body {
-    padding-top: env(safe-area-inset-top);
-    padding-bottom: env(safe-area-inset-bottom);
-  }
+  position: fixed;
+  width: 100%;
 }
 
 /* iOS 滚动惯性 */

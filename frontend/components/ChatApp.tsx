@@ -102,7 +102,7 @@ export default function ChatApp() {
 
   return (
     <AdvisorProvider value={advisorMap}>
-      <div className="flex overflow-hidden bg-white relative" style={{ height: '100dvh' }}>
+      <div className="fixed inset-0 flex overflow-hidden bg-white">
 
         {/* ── 遮罩 ── */}
         {sidebarOpen && (
