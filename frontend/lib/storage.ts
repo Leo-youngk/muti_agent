@@ -146,6 +146,20 @@ export function loadSettings(): AppSettings {
       }]
     }
 
+    // 确保预设模型始终存在于第一个 provider 中
+    if (s.providers.length > 0) {
+      const allModels = new Set(s.providers.flatMap(p => p.models))
+      const missing = LEGACY_PRESET_MODELS.filter(m => !allModels.has(m))
+      if (missing.length > 0) {
+        s.providers[0] = {
+          ...s.providers[0],
+          models: [...s.providers[0].models, ...missing],
+        }
+        // 写回，避免每次加载都触发
+        localStorage.setItem(SETTINGS_KEY, JSON.stringify(s))
+      }
+    }
+
     return s
   }, DEFAULT_SETTINGS)
 }
