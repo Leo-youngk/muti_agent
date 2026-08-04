@@ -2,18 +2,24 @@
 
 ## 必须执行的验证命令
 
-每次代码修改后都要运行：
+前端（活跃代码）在 `frontend/` 子目录，需先切换目录再运行：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts/agent-validate.ps1
+cd frontend
+npm install        # 首次
+npm run test       # Vitest 单元测试
+npm run build      # 类型检查 + 生产构建（验证 TS 与 Next 编译）
+npm run lint       # ESLint（如有）
 ```
+
+> 注意：仓库根目录没有 `package.json`，`scripts/agent-validate.ps1` 在根目录运行时会检测不到可执行的验证命令（返回 exit 2）。针对前端验证请直接在 `frontend/` 目录运行上述命令。
 
 ## 停止条件
 
 只有以下条件全部满足，任务才算完成：
 
 - 请求的功能或修复已经生效
-- 所有可用的自动验证检查通过
+- 所有可用的自动验证检查通过（Vitest、Next build/lint）
 - 修改文件范围仅限当前任务
 - 没有新增控制台、构建、lint、类型或测试错误
 - 如果行为或架构发生变化，相关文档已经更新
@@ -25,7 +31,7 @@ powershell -ExecutionPolicy Bypass -File scripts/agent-validate.ps1
 1. 阅读第一个有意义的错误，不要只看最后一行。
 2. 判断失败是否由当前改动引起。
 3. 修复最小根因。
-4. 优先重新运行失败的单个命令。
+4. 优先重新运行失败的单个命令（如 `npx vitest run <file>`）。
 5. 单个失败命令通过后，再运行完整验证命令。
 
 ## UI 改动验证
@@ -33,14 +39,16 @@ powershell -ExecutionPolicy Bypass -File scripts/agent-validate.ps1
 如果改动涉及 UI，还要验证：
 
 - 桌面端布局
-- 移动端布局
-- 核心用户流程
-- loading 状态
-- empty 状态
-- error 状态
-- success 状态
+- 移动端布局（本项目移动优先 / PWA）
+- 核心用户流程：输入问题 → 顾问流式回答 → 追问 / 辩论 → 切换 Thread
+- loading 状态（思考中动画）
+- empty 状态（首次进入的空面板）
+- error 状态（顾问失败、API Key 缺失、限速）
+- success 状态（done + 完整结构化正文与低干扰立场文字）
 - 文本没有重叠
-- 滚动没有异常
+- 滚动没有异常（自然滚动；离开底部时出现「查看新内容」）
+- iOS 视口至少覆盖 320×568、375×812、390×844、430×932，且无横向溢出
+- Agent 数量至少覆盖单 Agent、默认多 Agent 和 10 Agent 排序规则
 - 浏览器控制台没有新增错误
 
 如果当前环境无法做浏览器自动化验证，最终报告中必须明确说明“未运行 UI 浏览器验证”。
@@ -52,14 +60,14 @@ powershell -ExecutionPolicy Bypass -File scripts/agent-validate.ps1
 1. 先用失败测试或明确手动步骤复现问题。
 2. 做最小修复。
 3. 验证原失败测试或手动步骤已经通过。
-4. 运行完整验证命令。
+4. 运行完整验证命令（`npm test` + `npm run build`）。
 
 ## 功能开发规则
 
 开发功能时：
 
 1. 只实现验收标准范围内的内容。
-2. 在合理范围内新增或更新验证。
+2. 在合理范围内新增或更新验证（`frontend/__tests__/`）。
 3. 逐条验证所有验收标准。
 4. 运行完整验证命令。
 
@@ -69,4 +77,4 @@ powershell -ExecutionPolicy Bypass -File scripts/agent-validate.ps1
 - 不要用“应该可以了”声明成功。
 - 不要修复无关失败，除非它阻塞验证且确实必须处理。
 - 不要为了绕开一个小错误而重写大段代码。
-
+- 不要重新启用或“修复”遗留的 FastAPI / LangGraph / AutoGen 代码，除非任务明确要求。
