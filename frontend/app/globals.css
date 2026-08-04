@@ -2,6 +2,17 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --page: #fafaf8;
+  --surface: #ffffff;
+  --text: #191b1a;
+  --text-muted: #6e7471;
+  --text-faint: #909693;
+  --line: #e5e7e5;
+  --action: #0f5a54;
+  --error: #a63e35;
+}
+
 @keyframes cursor-blink {
   0%, 100% { opacity: 1; }
   50%       { opacity: 0; }
@@ -16,17 +27,23 @@ html, body {
   width: 100%;
 }
 
+body {
+  background: var(--page);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Microsoft YaHei", sans-serif;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: #dce8e4;
+  color: var(--text);
+}
+
 /* iOS 滚动惯性 */
 .overflow-y-auto,
 .overflow-y-scroll {
   -webkit-overflow-scrolling: touch;
-}
-
-/* 禁用 iOS 长按选中/放大镜（聊天气泡区域） */
-.no-callout {
-  -webkit-touch-callout: none;
-  -webkit-user-select: none;
-  user-select: none;
 }
 
 /* 触摸高亮去掉（按钮等） */
@@ -38,6 +55,15 @@ html, body {
 @media (hover: hover) {
   ::-webkit-scrollbar { width: 5px; }
   ::-webkit-scrollbar-track { background: transparent; }
-  ::-webkit-scrollbar-thumb { background: #E0E0E0; border-radius: 9999px; }
-  ::-webkit-scrollbar-thumb:hover { background: #C8C8C8; }
+  ::-webkit-scrollbar-thumb { background: #D5D0CB; border-radius: 9999px; }
+  ::-webkit-scrollbar-thumb:hover { background: #C5C0BA; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

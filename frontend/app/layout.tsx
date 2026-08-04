@@ -1,17 +1,14 @@
 import type { Metadata, Viewport } from 'next'
-import { Inter } from 'next/font/google'
 import './globals.css'
 
-const inter = Inter({ subsets: ['latin'] })
-
 export const metadata: Metadata = {
-  title: '顾问团 · 多视角决策',
-  description: '四位顶级顾问的多角度思维碰撞',
+  title: '讨论室 · 多 Agent 讨论',
+  description: '让多个 Agent 按顺序给出完整判断的讨论工具',
   manifest: '/manifest.json',
   appleWebApp: {
     capable: true,
-    statusBarStyle: 'black-translucent',
-    title: '顾问团',
+    statusBarStyle: 'default',
+    title: '讨论室',
     startupImage: [],
   },
   icons: {
@@ -29,16 +26,15 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
+  userScalable: true,
   viewportFit: 'cover',   // 允许内容延伸到刘海/灵动岛区域
-  themeColor: '#0D0D0D',
+  themeColor: '#FAFAF8',
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="zh-CN" className="h-full">
-      <body className={`${inter.className} h-full bg-white text-[#0D0D0D] antialiased`}>
+      <body className="h-full">
         {children}
       </body>
     </html>

@@ -1,12 +1,12 @@
 {
-  "name": "顾问团 · 多视角决策",
-  "short_name": "顾问团",
-  "description": "四位顶级顾问的多角度思维碰撞",
+  "name": "讨论室 · 多 Agent 讨论",
+  "short_name": "讨论室",
+  "description": "让多个 Agent 按顺序给出完整判断的讨论工具",
   "start_url": "/",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#ffffff",
-  "theme_color": "#0D0D0D",
+  "background_color": "#FAFAF8",
+  "theme_color": "#FAFAF8",
   "icons": [
     { "src": "/icons/icon-192.svg", "sizes": "192x192", "type": "image/svg+xml", "purpose": "any maskable" },
     { "src": "/icons/icon-512.svg", "sizes": "512x512", "type": "image/svg+xml", "purpose": "any maskable" }

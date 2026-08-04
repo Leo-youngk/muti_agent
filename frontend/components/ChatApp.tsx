@@ -124,7 +124,7 @@ export default function ChatApp() {
 
   return (
     <AdvisorProvider value={advisorMap}>
-      <div className="fixed inset-0 flex overflow-hidden bg-[#FAF9F7]">
+      <div className="fixed inset-0 flex overflow-hidden bg-[var(--page)]">
 
         {/* ── 遮罩 ── */}
         {sidebarOpen && (
@@ -160,13 +160,13 @@ export default function ChatApp() {
 
           {/* ── Header ── */}
           <header
-            className="shrink-0 flex items-center justify-between px-3 sm:px-4 bg-[#FAF9F7]"
+            className="shrink-0 flex items-center justify-between border-b border-[var(--line)] bg-[var(--page)] px-3 sm:px-4"
             style={{ minHeight: '3rem', paddingTop: 'env(safe-area-inset-top)' }}
           >
             {/* 左：菜单 */}
             <button
               onClick={() => setSidebarOpen(v => !v)}
-              className="p-2 -ml-1 rounded-full text-[#2D2B28] hover:bg-[#EDE8E3] active:bg-[#E5E0DB] transition-colors"
+              className="-ml-1 min-h-11 min-w-11 p-2 text-[var(--text)] transition-colors hover:bg-black/[0.03]"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
                 <path strokeLinecap="round" d="M4 8h16M4 16h16" />
@@ -174,7 +174,7 @@ export default function ChatApp() {
             </button>
 
             {/* 中：标题 */}
-            <span className="text-sm font-semibold text-[#2D2B28] truncate flex-1 text-center mx-2">
+            <span className="mx-2 flex-1 truncate text-center text-sm font-semibold text-[var(--text)]">
               {headerTitle}
             </span>
 
@@ -191,7 +191,7 @@ export default function ChatApp() {
               {(activeThread?.messages.length ?? 0) > 0 && (
                 <button
                   onClick={handleExport}
-                  className="p-2 rounded-full text-[#2D2B28] hover:bg-[#EDE8E3] transition-colors"
+                  className="min-h-11 min-w-11 p-2 text-[var(--text)] transition-colors hover:bg-black/[0.03]"
                   title="导出对话"
                 >
                   <svg className="w-4.5 h-4.5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
@@ -203,7 +203,7 @@ export default function ChatApp() {
               <button
                 onClick={newThread}
                 disabled={isStreaming}
-                className="p-2 -mr-1 rounded-full text-[#2D2B28] hover:bg-[#EDE8E3] active:bg-[#E5E0DB] transition-colors disabled:opacity-30"
+                className="-mr-1 min-h-11 min-w-11 p-2 text-[var(--text)] transition-colors hover:bg-black/[0.03] disabled:opacity-30"
                 title="新建对话"
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
@@ -216,10 +216,10 @@ export default function ChatApp() {
 
           {/* ── 错误提示 ── */}
           {error && (
-            <div className="mx-4 mt-3 px-4 py-3 bg-[#FFF5F5] border border-[#FFCDD2] rounded-2xl text-sm text-[#C62828] flex items-start gap-2">
+            <div className="mx-auto mt-3 flex w-[calc(100%-2.5rem)] max-w-[680px] items-start gap-2 border-y border-[#A63E3533] py-3 text-sm text-[var(--error)]">
               <span className="shrink-0">⚠</span>
               <span className="flex-1">{error}</span>
-              <button onClick={() => setError(null)} className="shrink-0 text-[#C62828]">✕</button>
+              <button onClick={() => setError(null)} className="min-h-11 min-w-11 shrink-0 text-[var(--error)]">关闭</button>
             </div>
           )}
 
