@@ -72,7 +72,7 @@ function AddAdvisorForm({ onAdd, onCancel }: {
 
   return (
     <div className="border border-[#0D0D0D22] rounded-xl p-4 space-y-3 bg-[#FAFAFA]">
-      <p className="text-xs font-semibold text-[#0D0D0D] uppercase tracking-widest">新增顾问</p>
+      <p className="text-xs font-semibold text-[#0D0D0D] uppercase tracking-widest">新增 Agent</p>
 
       <div className="grid grid-cols-2 gap-3">
         <div>
@@ -170,7 +170,7 @@ function AddAdvisorForm({ onAdd, onCancel }: {
           className="px-4 py-1.5 text-sm font-medium bg-[#0D0D0D] text-white rounded-xl
                      hover:bg-[#2A2A2A] active:scale-95 transition-all disabled:opacity-30"
         >
-          添加顾问
+          添加 Agent
         </button>
       </div>
     </div>
@@ -332,7 +332,7 @@ export default function SettingsModal({ settings, onSave, onClose }: Props) {
                 tab === t ? 'bg-[#0D0D0D] text-white' : 'text-[#555] hover:bg-[#F5F5F5]'
               }`}
             >
-              {t === 'api' ? 'API 配置' : `顾问管理 (${activeCount})`}
+              {t === 'api' ? 'API 配置' : `Agent 管理 (${activeCount})`}
             </button>
           ))}
         </div>
@@ -544,7 +544,7 @@ export default function SettingsModal({ settings, onSave, onClose }: Props) {
           {tab === 'advisors' && (
             <div className="space-y-2">
               <p className="text-xs text-[#999] pb-1">
-                切换面板成员、编辑思维档案，或添加全新顾问。
+                调整参与讨论的 Agent、编辑思维档案，或添加新 Agent。
               </p>
 
               {/* 内置顾问 */}
@@ -621,7 +621,7 @@ export default function SettingsModal({ settings, onSave, onClose }: Props) {
               {(draft.customAdvisors ?? []).length > 0 && (
                 <div className="flex items-center gap-2 py-1">
                   <div className="flex-1 h-px bg-[#EBEBEB]" />
-                  <span className="text-[10px] text-[#BBB] uppercase tracking-widest">自定义顾问</span>
+                  <span className="text-[10px] text-[#BBB] uppercase tracking-widest">自定义 Agent</span>
                   <div className="flex-1 h-px bg-[#EBEBEB]" />
                 </div>
               )}
@@ -665,7 +665,7 @@ export default function SettingsModal({ settings, onSave, onClose }: Props) {
                       <button
                         onClick={() => deleteCustomAdvisor(ca.id)}
                         className="p-1 rounded-md text-[#BBB] hover:text-[#DC2626] hover:bg-[#FEE2E2] transition-colors"
-                        title="删除此顾问"
+                        title="删除此 Agent"
                       >
                         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
@@ -705,7 +705,7 @@ export default function SettingsModal({ settings, onSave, onClose }: Props) {
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                   </svg>
-                  新增顾问
+                  新增 Agent
                 </button>
               )}
             </div>

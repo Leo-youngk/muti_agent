@@ -181,7 +181,7 @@ export function saveSettings(s: AppSettings): void {
 
 export function threadToMarkdown(thread: Thread): string {
   const lines: string[] = []
-  lines.push(`# 顾问团 · ${thread.title}`)
+  lines.push(`# 讨论室 · ${thread.title}`)
   lines.push(`> Thread: \`${thread.id}\` · 导出于 ${new Date().toLocaleString('zh-CN')}`)
   lines.push('')
   lines.push('---')
