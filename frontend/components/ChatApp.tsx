@@ -47,12 +47,10 @@ export default function ChatApp() {
     typeof window !== 'undefined' ? window.innerWidth >= 768 : false
   )
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const [composerOpen, setComposerOpen] = useState(false)
-
-  useEffect(() => {
-    setComposerOpen((activeThread?.messages.length ?? 0) === 0)
-    setTargetAdvisor(null)
-  }, [activeId, activeThread?.messages.length, setTargetAdvisor])
+  const [composerThreadId, setComposerThreadId] = useState<string | null>(() =>
+    (activeThread?.messages.length ?? 0) === 0 ? activeId : null
+  )
+  const composerOpen = composerThreadId === activeId
 
   // ── Handlers ─────────────────────────────────────────────────────────────────
   const handleModelChange = useCallback((m: string) => {
@@ -68,23 +66,37 @@ export default function ChatApp() {
 
   const handleSubmit = useCallback((task: string) => {
     rawSubmit(task, activeId, threads, selectedModel, settings, activeAdvisors)
-    setComposerOpen(false)
+    setComposerThreadId(null)
   }, [rawSubmit, activeId, threads, selectedModel, settings, activeAdvisors])
 
   const openFollowUp = useCallback((advisorId: AdvisorId) => {
     handleFollowUp(advisorId)
-    setComposerOpen(true)
-  }, [handleFollowUp])
+    setComposerThreadId(activeId)
+  }, [activeId, handleFollowUp])
 
   const openGeneralComposer = useCallback(() => {
     setTargetAdvisor(null)
-    setComposerOpen(true)
-  }, [setTargetAdvisor])
+    setComposerThreadId(activeId)
+  }, [activeId, setTargetAdvisor])
 
   const closeComposer = useCallback(() => {
-    setComposerOpen(false)
+    setComposerThreadId(null)
     setTargetAdvisor(null)
   }, [setTargetAdvisor])
+
+  const handleSelectThread = useCallback((id: string) => {
+    const thread = threads.find(item => item.id === id)
+    setActiveId(id)
+    setComposerThreadId((thread?.messages.length ?? 0) === 0 ? id : null)
+    setTargetAdvisor(null)
+    if (window.innerWidth < 768) setSidebarOpen(false)
+  }, [setActiveId, setTargetAdvisor, threads])
+
+  const handleNewThread = useCallback(() => {
+    const thread = newThread()
+    setComposerThreadId(thread.id)
+    setTargetAdvisor(null)
+  }, [newThread, setTargetAdvisor])
 
   const submitRef = useRef(handleSubmit)
   useEffect(() => { submitRef.current = handleSubmit }, [handleSubmit])
@@ -114,13 +126,13 @@ export default function ChatApp() {
   const handleExport = useCallback(() => {
     const thread = threads.find(t => t.id === activeId)
     if (!thread) return
-    downloadMarkdown(`顾问团_${thread.title.slice(0, 20)}.md`, threadToMarkdown(thread))
+    downloadMarkdown(`讨论室_${thread.title.slice(0, 20)}.md`, threadToMarkdown(thread))
   }, [threads, activeId])
 
   // 移动端标题：截短显示当前对话
   const headerTitle = activeThread?.title
     ? (activeThread.title.length > 14 ? activeThread.title.slice(0, 14) + '…' : activeThread.title)
-    : '顾问团'
+    : '讨论室'
 
   return (
     <AdvisorProvider value={advisorMap}>
@@ -144,11 +156,8 @@ export default function ChatApp() {
           <Sidebar
             threads={threads}
             activeId={activeId}
-            onSelectThread={id => {
-              setActiveId(id)
-              if (window.innerWidth < 768) setSidebarOpen(false)
-            }}
-            onNewThread={newThread}
+            onSelectThread={handleSelectThread}
+            onNewThread={handleNewThread}
             onDeleteThread={deleteThread}
             onRenameThread={renameThread}
             onClose={() => setSidebarOpen(false)}
@@ -201,7 +210,7 @@ export default function ChatApp() {
                 </button>
               )}
               <button
-                onClick={newThread}
+                onClick={handleNewThread}
                 disabled={isStreaming}
                 className="-mr-1 min-h-11 min-w-11 p-2 text-[var(--text)] transition-colors hover:bg-black/[0.03] disabled:opacity-30"
                 title="新建对话"
