@@ -30,7 +30,7 @@ export function getOrderedActiveAdvisors(
   advisors: AdvisorMeta[],
   status: Record<string, AdvisorStatus>,
 ): AdvisorMeta[] {
-  return advisors.filter(({ id }) => status[id] !== undefined && status[id] !== 'idle')
+  return advisors.filter(({ id }) => status[id] !== undefined)
 }
 
 export function getVisibleJudgmentSections(data?: Partial<AdvisorJudgment>) {

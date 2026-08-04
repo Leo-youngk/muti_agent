@@ -25,7 +25,7 @@ describe('discussion presentation', () => {
     }
 
     expect(getOrderedActiveAdvisors(advisors, status).map(a => a.id))
-      .toEqual(['a0', 'a1', 'a3', 'a9'])
+      .toEqual(['a0', 'a1', 'a2', 'a3', 'a9'])
   })
 
   it('formats stable document section numbers', () => {
