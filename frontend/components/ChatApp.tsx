@@ -47,6 +47,12 @@ export default function ChatApp() {
     typeof window !== 'undefined' ? window.innerWidth >= 768 : false
   )
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [composerOpen, setComposerOpen] = useState(false)
+
+  useEffect(() => {
+    setComposerOpen((activeThread?.messages.length ?? 0) === 0)
+    setTargetAdvisor(null)
+  }, [activeId, activeThread?.messages.length, setTargetAdvisor])
 
   // ── Handlers ─────────────────────────────────────────────────────────────────
   const handleModelChange = useCallback((m: string) => {
@@ -62,7 +68,23 @@ export default function ChatApp() {
 
   const handleSubmit = useCallback((task: string) => {
     rawSubmit(task, activeId, threads, selectedModel, settings, activeAdvisors)
+    setComposerOpen(false)
   }, [rawSubmit, activeId, threads, selectedModel, settings, activeAdvisors])
+
+  const openFollowUp = useCallback((advisorId: AdvisorId) => {
+    handleFollowUp(advisorId)
+    setComposerOpen(true)
+  }, [handleFollowUp])
+
+  const openGeneralComposer = useCallback(() => {
+    setTargetAdvisor(null)
+    setComposerOpen(true)
+  }, [setTargetAdvisor])
+
+  const closeComposer = useCallback(() => {
+    setComposerOpen(false)
+    setTargetAdvisor(null)
+  }, [setTargetAdvisor])
 
   const submitRef = useRef(handleSubmit)
   useEffect(() => { submitRef.current = handleSubmit }, [handleSubmit])
@@ -82,8 +104,8 @@ export default function ChatApp() {
     const lastPanel = [...thread.messages].reverse().find(m => m.role === 'panel')
     const lastUser  = [...thread.messages].reverse().find(m => m.role === 'user')
     if (!lastPanel || !lastUser) return
-    handleRetryAdvisor(activeId, lastPanel.id, advisorId, lastUser.content, settings, selectedModel, thread.messages)
-  }, [threads, activeId, handleRetryAdvisor, settings, selectedModel])
+    handleRetryAdvisor(activeId, lastPanel.id, advisorId, lastUser.content, settings, selectedModel, thread.messages, activeAdvisors)
+  }, [threads, activeId, handleRetryAdvisor, settings, selectedModel, activeAdvisors])
 
   const handleDebate = useCallback(() => {
     rawDebate(activeId, threads, selectedModel, settings, activeAdvisors)
@@ -102,12 +124,12 @@ export default function ChatApp() {
 
   return (
     <AdvisorProvider value={advisorMap}>
-      <div className="fixed inset-0 flex overflow-hidden bg-white">
+      <div className="fixed inset-0 flex overflow-hidden bg-[#FAF9F7]">
 
         {/* ── 遮罩 ── */}
         {sidebarOpen && (
           <div
-            className="md:hidden fixed inset-0 bg-black/40 z-30 transition-opacity"
+            className="md:hidden fixed inset-0 bg-black/30 z-30 transition-opacity"
             onClick={() => setSidebarOpen(false)}
           />
         )}
@@ -130,11 +152,6 @@ export default function ChatApp() {
             onDeleteThread={deleteThread}
             onRenameThread={renameThread}
             onClose={() => setSidebarOpen(false)}
-            selectedModel={selectedModel}
-            onModelChange={handleModelChange}
-            onSettingsOpen={() => setSettingsOpen(true)}
-            isStreaming={isStreaming}
-            providers={settings.providers ?? []}
           />
         </aside>
 
@@ -143,34 +160,42 @@ export default function ChatApp() {
 
           {/* ── Header ── */}
           <header
-            className="shrink-0 flex items-center justify-between px-3 sm:px-4 border-b border-[#EBEBEB] bg-white"
-            style={{ minHeight: '3.25rem', paddingTop: 'env(safe-area-inset-top)' }}
+            className="shrink-0 flex items-center justify-between px-3 sm:px-4 bg-[#FAF9F7]"
+            style={{ minHeight: '3rem', paddingTop: 'env(safe-area-inset-top)' }}
           >
             {/* 左：菜单 */}
             <button
               onClick={() => setSidebarOpen(v => !v)}
-              className="p-2 rounded-xl text-[#888] hover:bg-[#F0F0F0] active:bg-[#E8E8E8] transition-colors"
+              className="p-2 -ml-1 rounded-full text-[#2D2B28] hover:bg-[#EDE8E3] active:bg-[#E5E0DB] transition-colors"
             >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M4 6h16M4 12h16M4 18h16" />
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <path strokeLinecap="round" d="M4 8h16M4 16h16" />
               </svg>
             </button>
 
             {/* 中：标题 */}
-            <span className="text-sm font-semibold text-[#0D0D0D] truncate flex-1 text-center mx-2">
+            <span className="text-sm font-semibold text-[#2D2B28] truncate flex-1 text-center mx-2">
               {headerTitle}
             </span>
 
             {/* 右：操作 */}
-            <div className="flex items-center gap-0.5">
+            <div className="flex items-center gap-1">
+              {isStreaming && (
+                <button
+                  onClick={handleStop}
+                  className="min-h-11 px-2 text-sm text-[var(--error)]"
+                >
+                  停止
+                </button>
+              )}
               {(activeThread?.messages.length ?? 0) > 0 && (
                 <button
                   onClick={handleExport}
-                  className="p-2 rounded-xl text-[#888] hover:bg-[#F0F0F0] transition-colors"
+                  className="p-2 rounded-full text-[#2D2B28] hover:bg-[#EDE8E3] transition-colors"
                   title="导出对话"
                 >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                  <svg className="w-4.5 h-4.5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round"
                       d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                   </svg>
                 </button>
@@ -178,12 +203,12 @@ export default function ChatApp() {
               <button
                 onClick={newThread}
                 disabled={isStreaming}
-                className="p-2 rounded-xl text-[#888] hover:bg-[#F0F0F0] active:bg-[#E8E8E8] transition-colors disabled:opacity-30"
+                className="p-2 -mr-1 rounded-full text-[#2D2B28] hover:bg-[#EDE8E3] active:bg-[#E5E0DB] transition-colors disabled:opacity-30"
                 title="新建对话"
               >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                    d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
+                  <circle cx="12" cy="12" r="9" />
+                  <path strokeLinecap="round" d="M12 8v8M8 12h8" />
                 </svg>
               </button>
             </div>
@@ -201,10 +226,12 @@ export default function ChatApp() {
           {/* ── 对话区 ── */}
           <ChatView
             messages={activeThread?.messages ?? []}
-            onFollowUp={handleFollowUp}
+            advisors={activeAdvisors}
+            onFollowUp={openFollowUp}
             onRegenerate={handleRegenerate}
             onRetryAdvisor={handleRetry}
-            onExamplePrompt={handleSubmit}
+            onStartDiscussion={openGeneralComposer}
+            onContinueDiscussion={openGeneralComposer}
             onDebate={handleDebate}
             isStreaming={isStreaming}
           />
@@ -212,11 +239,17 @@ export default function ChatApp() {
           {/* ── 输入栏 ── */}
           <InputBar
             key={activeId}
+            open={composerOpen}
+            onClose={closeComposer}
             onSubmit={handleSubmit}
             isStreaming={isStreaming}
             onStop={handleStop}
             targetAdvisor={targetAdvisor}
             onClearTarget={() => setTargetAdvisor(null)}
+            selectedModel={selectedModel}
+            onModelChange={handleModelChange}
+            providers={settings.providers ?? []}
+            onSettingsOpen={() => setSettingsOpen(true)}
           />
         </main>
 
