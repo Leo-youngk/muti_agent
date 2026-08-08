@@ -1,13 +1,11 @@
 'use client'
 
-import { useRef, useState, type ChangeEvent, type KeyboardEvent } from 'react'
+import { forwardRef, useImperativeHandle, useRef, useState, type ChangeEvent, type KeyboardEvent } from 'react'
 import type { AdvisorId, Provider } from '@/lib/types'
 import { useAdvisorMap } from '@/lib/AdvisorContext'
 import ModelSelector from './ModelSelector'
 
 interface Props {
-  open: boolean
-  onClose: () => void
   onSubmit: (task: string) => void
   isStreaming: boolean
   onStop?: () => void
@@ -16,12 +14,13 @@ interface Props {
   selectedModel: string
   onModelChange: (model: string) => void
   providers: Provider[]
-  onSettingsOpen: () => void
 }
 
-export default function InputBar({
-  open,
-  onClose,
+export interface InputBarHandle {
+  focus: () => void
+}
+
+const InputBar = forwardRef<InputBarHandle, Props>(function InputBar({
   onSubmit,
   isStreaming,
   onStop,
@@ -30,19 +29,15 @@ export default function InputBar({
   selectedModel,
   onModelChange,
   providers,
-  onSettingsOpen,
-}: Props) {
+}, ref) {
   const advisorMap = useAdvisorMap()
   const [value, setValue] = useState('')
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const targetMeta = targetAdvisor ? advisorMap[targetAdvisor] : null
 
-  if (!open) return null
-
-  const close = () => {
-    onClearTarget?.()
-    onClose()
-  }
+  useImperativeHandle(ref, () => ({
+    focus: () => textareaRef.current?.focus(),
+  }))
 
   const submit = () => {
     const trimmed = value.trim()
@@ -53,11 +48,6 @@ export default function InputBar({
   }
 
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.key === 'Escape') {
-      event.preventDefault()
-      close()
-      return
-    }
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault()
       submit()
@@ -72,30 +62,30 @@ export default function InputBar({
 
   return (
     <div
-      role="dialog"
-      aria-label={targetMeta ? `追问 ${targetMeta.name}` : '继续讨论'}
-      className="fixed inset-x-0 bottom-0 z-50 border-t border-[var(--line)] bg-[var(--page)] px-4 pt-3"
+      className="shrink-0 bg-[var(--page)] px-3 pt-2 pb-3"
       style={{ paddingBottom: 'max(12px, env(safe-area-inset-bottom))' }}
     >
-      <div className="mx-auto max-w-[680px]">
-        <div className="mb-2 flex min-h-11 items-center justify-between">
-          <span className="text-sm text-[var(--text-muted)]">
-            {targetMeta ? `追问 ${targetMeta.name}` : '继续讨论'}
-          </span>
-          <button
-            onClick={close}
-            aria-label="关闭输入"
-            className="min-h-11 min-w-11 text-sm text-[var(--text-muted)]"
-          >
-            关闭
-          </button>
-        </div>
+      <div className="mx-auto max-w-[720px]">
+        {targetMeta && (
+          <div className="mb-2 flex min-h-8 items-center justify-between px-1">
+            <span className="text-xs text-[var(--text-muted)]">
+              追问 <span className="font-medium text-[var(--text)]">{targetMeta.name}</span>
+            </span>
+            <button
+              onClick={onClearTarget}
+              aria-label="取消追问对象"
+              className="px-2 py-1 text-xs text-[var(--text-muted)] hover:text-[var(--text)]"
+            >
+              取消
+            </button>
+          </div>
+        )}
 
-        <div className="border border-[var(--line)] bg-[var(--page)]">
-          <div className="flex items-end gap-3 px-3 py-3">
+        <div className="relative rounded-[28px] border border-[var(--line)] bg-[var(--surface)] shadow-[0_2px_16px_rgba(0,0,0,0.06)]">
+          {/* 输入区 */}
+          <div className="flex items-end gap-2 px-4 pt-3.5 pb-2">
             <textarea
               ref={textareaRef}
-              autoFocus
               value={value}
               onChange={handleChange}
               onKeyDown={handleKeyDown}
@@ -104,39 +94,54 @@ export default function InputBar({
                 ? 'Agent 正在回答…'
                 : targetMeta
                   ? `追问 ${targetMeta.name}…`
-                  : '输入问题…'}
+                  : '发消息或输入问题…'}
               rows={1}
-              className="min-h-11 flex-1 resize-none bg-transparent py-2 text-base leading-7 text-[var(--text)] outline-none placeholder:text-[var(--text-faint)] disabled:cursor-not-allowed"
+              className="min-h-6 flex-1 resize-none bg-transparent py-1 text-base leading-6 text-[var(--text)] outline-none placeholder:text-[var(--text-faint)] disabled:cursor-not-allowed"
               style={{ maxHeight: '160px' }}
             />
-            {(isStreaming || value.trim()) && (
-              <button
-                onClick={isStreaming ? onStop : submit}
-                aria-label={isStreaming ? '停止生成' : '发送'}
-                className="min-h-11 min-w-11 text-sm font-medium text-[var(--action)]"
-              >
-                {isStreaming ? '停止' : '发送'}
-              </button>
-            )}
           </div>
 
-          <div className="flex min-h-11 items-center gap-2 border-t border-[var(--line)] px-3">
-            <ModelSelector
-              value={selectedModel}
-              onChange={onModelChange}
-              disabled={isStreaming}
-              providers={providers}
-            />
-            <div className="flex-1" />
-            <button
-              onClick={onSettingsOpen}
-              className="min-h-11 min-w-11 text-sm text-[var(--text-muted)]"
-            >
-              设置
-            </button>
+          {/* 底部功能区 */}
+          <div className="flex min-h-12 items-center justify-between px-3 pb-2">
+            {/* 左侧：模型选择（深度思考位置） */}
+            <div className="flex items-center gap-2">
+              <ModelSelector
+                value={selectedModel}
+                onChange={onModelChange}
+                disabled={isStreaming}
+                providers={providers}
+              />
+            </div>
+
+            {/* 右侧：发送/停止 */}
+            <div className="flex items-center gap-1.5">
+              {(isStreaming || value.trim()) && (
+                <button
+                  onClick={isStreaming ? onStop : submit}
+                  aria-label={isStreaming ? '停止生成' : '发送'}
+                  className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-all active:scale-90 ${
+                    isStreaming
+                      ? 'bg-[var(--text-muted)] text-[var(--surface)]'
+                      : 'bg-[var(--action)] text-[var(--surface)]'
+                  }`}
+                >
+                  {isStreaming ? (
+                    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                      <rect x="7" y="7" width="10" height="10" rx="2" />
+                    </svg>
+                  ) : (
+                    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M12 19V5M12 5l-6 6M12 5l6 6" />
+                    </svg>
+                  )}
+                </button>
+              )}
+            </div>
           </div>
         </div>
       </div>
     </div>
   )
-}
+})
+
+export default InputBar

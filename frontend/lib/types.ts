@@ -21,30 +21,11 @@ export interface AdvisorJudgment {
   approach?: string
 }
 
-export interface Dispute {
-  between: [string, string]
-  clash: string
-  a_says: string
-  b_says: string
-  trust: string
-  why: string
-}
-
-export interface CrossAnalysis {
-  disputes: Dispute[]
-  verdict: string
-  listen_to: string[]
-  blind_spot: string
-  do_next: string[]
-}
-
 export interface PanelResult {
   judgments: Record<string, AdvisorJudgment | undefined>
   advisorStatus: Record<string, AdvisorStatus>
+  advisorErrors?: Record<string, string | undefined>
   streamingTexts: Record<string, string | undefined>
-  analysis?: CrossAnalysis
-  analysisStatus: 'idle' | 'thinking' | 'done'
-  analysisStream: string
 }
 
 export interface Message {
@@ -98,6 +79,13 @@ export interface AppSettings {
   customAdvisors: CustomAdvisor[]
   /** 从面板中隐藏的顾问 ID（内置 + 自定义均可） */
   hiddenAdvisors: string[]
+  /** 高级参数：采样温度（undefined / 'auto' 表示不传，让服务端自己降级） */
+  temperature?: number | 'auto'
+  /** 高级参数：单次调用 max_tokens 上限（undefined 用服务端默认 16384） */
+  maxTokensCap?: number
+  /** 高级参数：服务端单次调用超时（毫秒，undefined 用服务端默认 120000） */
+  timeoutMs?: number
+  theme?: 'sage' | 'ocean' | 'midnight' | 'rose' | 'amber'
 }
 
 export interface HistoryMessage {
@@ -120,15 +108,11 @@ export interface StreamEvent {
     | 'advisor_start'
     | 'advisor_token'
     | 'advisor_complete'
-    | 'analysis_start'
-    | 'analysis_token'
-    | 'analysis_complete'
     | 'complete'
     | 'error'
   advisorId?: string
   token?: string
   judgment?: AdvisorJudgment | null
-  analysis?: CrossAnalysis | null
   error?: string
   /** 辩论模式下标记阶段 */
   phase?: 'initial' | 'debate'

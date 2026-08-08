@@ -10,11 +10,7 @@ interface Props {
   messages: Message[]
   advisors: AdvisorMeta[]
   onFollowUp: (advisorId: AdvisorId) => void
-  onRegenerate: () => void
   onRetryAdvisor: (advisorId: AdvisorId) => void
-  onStartDiscussion: () => void
-  onContinueDiscussion: () => void
-  onDebate: () => void
   isStreaming: boolean
 }
 
@@ -22,16 +18,13 @@ export default function ChatView({
   messages,
   advisors,
   onFollowUp,
-  onRegenerate,
   onRetryAdvisor,
-  onStartDiscussion,
-  onContinueDiscussion,
-  onDebate,
   isStreaming,
 }: Props) {
   const bottomRef = useRef<HTMLDivElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const isNearBottomRef = useRef(true)
+  const scrollRafRef = useRef<number | null>(null)
   const [hasNewContent, setHasNewContent] = useState(false)
 
   const scrollToBottom = useCallback(() => {
@@ -41,13 +34,22 @@ export default function ChatView({
   }, [])
 
   useEffect(() => {
-    if (isNearBottomRef.current) {
-      bottomRef.current?.scrollIntoView?.({ behavior: 'smooth' })
-      setHasNewContent(false)
-    } else {
+    if (!isNearBottomRef.current) {
       setHasNewContent(true)
+      return
     }
-  }, [messages])
+    setHasNewContent(false)
+    // 流式期间每帧都会重渲染：合并到一帧，且用 auto——smooth 每帧重启动画在 iOS 上会卡住
+    if (scrollRafRef.current !== null) return
+    scrollRafRef.current = requestAnimationFrame(() => {
+      scrollRafRef.current = null
+      bottomRef.current?.scrollIntoView?.({ behavior: isStreaming ? 'auto' : 'smooth' })
+    })
+  }, [messages, isStreaming])
+
+  useEffect(() => () => {
+    if (scrollRafRef.current !== null) cancelAnimationFrame(scrollRafRef.current)
+  }, [])
 
   const handleScroll = useCallback(() => {
     const element = containerRef.current
@@ -59,24 +61,12 @@ export default function ChatView({
 
   if (messages.length === 0) {
     return (
-      <div className="mx-auto flex h-full w-full max-w-[680px] flex-1 flex-col justify-center px-5 max-[360px]:px-4">
-        <h1 className="text-2xl font-semibold tracking-tight text-[var(--text)]">
-          开始一个讨论
-        </h1>
-        <p className="mt-3 max-w-md text-base leading-7 text-[var(--text-muted)]">
-          提出一个问题，多个 Agent 会按顺序给出完整判断。
-        </p>
-        <button
-          onClick={onStartDiscussion}
-          className="mt-8 min-h-11 w-fit text-sm font-medium text-[var(--action)] underline underline-offset-4"
-        >
-          提出问题
-        </button>
-      </div>
+      <div className="flex-1" />
     )
   }
 
   const panelMessages = messages.filter(message => message.role === 'panel')
+  const lastPanelMessage = panelMessages.at(-1)
 
   return (
     <div className="relative flex-1 overflow-hidden">
@@ -85,16 +75,15 @@ export default function ChatView({
         onScroll={handleScroll}
         className="h-full overflow-y-auto overscroll-contain"
       >
-        <div className="mx-auto w-full max-w-[680px] px-5 pb-24 pt-7 max-[360px]:px-4">
+        <div className="mx-auto w-full max-w-[680px] px-5 pb-8 pt-6 max-[360px]:px-4">
           {messages.map(message => {
             if (message.role === 'user') {
               return (
-                <p
-                  key={message.id}
-                  className="mb-10 whitespace-pre-wrap text-[19px] font-medium leading-[1.65] tracking-[-0.01em] text-[var(--text)]"
-                >
-                  {message.content}
-                </p>
+                <div key={message.id} className="mb-2 flex justify-end">
+                  <p className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-md bg-[var(--bubble)] px-3.5 py-2.5 text-[15px] leading-[1.6] text-[var(--text)]">
+                    {message.content}
+                  </p>
+                </div>
               )
             }
 
@@ -102,18 +91,13 @@ export default function ChatView({
 
             const panel = message.panel
             const orderedAdvisors = getOrderedActiveAdvisors(advisors, panel.advisorStatus)
-            const isLastPanel = message === panelMessages.at(-1)
             const isFollowUp = Boolean(message.followUpMeta)
             const isDebateRound = Boolean(message.isDebateRound)
-            const allDone = orderedAdvisors.length > 0 && orderedAdvisors.every(meta => {
-              const status = panel.advisorStatus[meta.id]
-              return status === 'done' || status === 'error'
-            })
 
             return (
-              <article key={message.id} className="mb-12">
+              <article key={message.id} className="mb-8">
                 {(isFollowUp || isDebateRound) && (
-                  <p className="mb-3 border-t border-[var(--line)] pt-8 text-xs text-[var(--text-muted)]">
+                  <p className="mb-2 pt-2 text-xs text-[var(--text-muted)]">
                     {isDebateRound
                       ? `第 ${panelMessages.indexOf(message) + 1} 轮讨论`
                       : '定向追问'}
@@ -122,7 +106,7 @@ export default function ChatView({
 
                 {orderedAdvisors.map((meta, index) => {
                   const status = panel.advisorStatus[meta.id]
-                  const canAct = isLastPanel && !isStreaming
+                  const canAct = !isStreaming && message === lastPanelMessage
                   return (
                     <AgentResponseSection
                       key={meta.id}
@@ -135,37 +119,13 @@ export default function ChatView({
                       onFollowUp={canAct && status === 'done'
                         ? () => onFollowUp(meta.id)
                         : undefined}
-                      onRetry={canAct && status === 'error' && !panel.judgments[meta.id]
+                      onRetry={canAct && (status === 'error' || status === 'idle')
                         ? () => onRetryAdvisor(meta.id)
                         : undefined}
                     />
                   )
                 })}
 
-                {isLastPanel && allDone && !isStreaming && (
-                  <div className="flex flex-wrap gap-x-6 border-t border-[var(--line)] py-10 text-sm">
-                    <button
-                      onClick={onContinueDiscussion}
-                      className="min-h-11 font-medium text-[var(--action)]"
-                    >
-                      继续讨论
-                    </button>
-                    <button
-                      onClick={onRegenerate}
-                      className="min-h-11 text-[var(--text-muted)]"
-                    >
-                      重新生成本轮
-                    </button>
-                    {orderedAdvisors.length > 1 && !isFollowUp && !isDebateRound && (
-                      <button
-                        onClick={onDebate}
-                        className="min-h-11 font-medium text-[var(--action)]"
-                      >
-                        发起下一轮讨论
-                      </button>
-                    )}
-                  </div>
-                )}
               </article>
             )
           })}

@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { v4 as uuidv4 } from 'uuid'
-import type { Message, Thread, PanelResult, AppSettings } from './types'
+import type { Thread, PanelResult } from './types'
 import type { AdvisorMeta } from './advisors'
 import { loadThreadsSync, saveThreads } from './storage'
 
@@ -17,17 +17,20 @@ export function makeInitialPanel(activeAdvisors: AdvisorMeta[]): PanelResult {
   const advisorStatus = Object.fromEntries(
     activeAdvisors.map(a => [a.id, 'idle' as const])
   ) as Record<string, 'idle'>
-  return { judgments: {}, advisorStatus, streamingTexts: {}, analysisStatus: 'idle', analysisStream: '' }
+  return { judgments: {}, advisorStatus, streamingTexts: {} }
 }
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
 export function useThreads() {
-  const [threads, setThreads] = useState<Thread[]>(() => {
-    const saved = loadThreadsSync()
-    return saved.length > 0 ? saved : [makeThread()]
-  })
+  // localStorage 兜底数据只解析一次：后两个初始值直接复用首渲染的 threads 快照
+  const [threads, setThreads] = useState<Thread[]>(loadThreadsSync)
   const [activeId, setActiveId] = useState<string>(() => threads[0]?.id ?? '')
+  // 同步已有历史时立即展示；否则等 IndexedDB 加载完成再定初值，
+  // 避免"新问题"首屏闪烁后被历史对话覆盖。
+  const [booted, setBooted] = useState(() => threads.length > 0)
+  const threadsRef = useRef<Thread[]>(threads)
+  useEffect(() => { threadsRef.current = threads }, [threads])
 
   // 异步加载 IndexedDB 数据覆盖同步初始值
   const hasLoadedIDB = useRef(false)
@@ -38,8 +41,14 @@ export function useThreads() {
       loadAsync().then(data => {
         if (data.length > 0) {
           setThreads(data)
-          setActiveId(prev => data.find(t => t.id === prev) ? prev : data[0].id)
+          setActiveId(prev => data.some(t => t.id === prev) ? prev : data[0].id)
+        } else if (threadsRef.current.length === 0) {
+          // 无任何历史：创建默认线程
+          const t = makeThread()
+          setThreads([t])
+          setActiveId(t.id)
         }
+        setBooted(true)
       })
     )
   }, [])
@@ -89,17 +98,16 @@ export function useThreads() {
   }, [setThreadsAndSave])
 
   const deleteThread = useCallback((id: string) => {
-    setThreadsAndSave(prev => {
-      const remaining = prev.filter(t => t.id !== id)
-      if (remaining.length === 0) {
-        const newT = makeThread()
-        setActiveId(newT.id)
-        return [newT]
-      }
-      if (id === activeId) setActiveId(remaining[0].id)
-      return remaining
-    })
-  }, [activeId, setThreadsAndSave])
+    const remaining = threads.filter(t => t.id !== id)
+    if (remaining.length === 0) {
+      const newT = makeThread()
+      setThreadsAndSave([newT])
+      setActiveId(newT.id)
+      return
+    }
+    setThreadsAndSave(remaining)
+    if (id === activeId) setActiveId(remaining[0].id)
+  }, [threads, activeId, setThreadsAndSave])
 
   const renameThread = useCallback((id: string, title: string) => {
     updateThread(id, t => ({ ...t, title }))
@@ -116,5 +124,6 @@ export function useThreads() {
     deleteThread,
     renameThread,
     isStreamingRef,
+    booted,
   }
 }

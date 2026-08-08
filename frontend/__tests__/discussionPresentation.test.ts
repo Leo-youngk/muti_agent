@@ -35,7 +35,7 @@ describe('discussion presentation', () => {
     expect(formatAgentIndex(100)).toBe('101')
   })
 
-  it('returns every non-empty structured field in reading order', () => {
+  it('returns only core reading fields in order', () => {
     const judgment: AdvisorJudgment = {
       advisor: 'A',
       stance: '支持',
@@ -48,13 +48,17 @@ describe('discussion presentation', () => {
       blind_spot: '盲点',
     }
 
-    expect(getVisibleJudgmentSections(judgment).map(s => s.label)).toEqual([
-      '核心判断', '推理', '核心批评', '关注焦点', '要求改变', '如何切入', '盲点',
-    ])
+    expect(getVisibleJudgmentSections(judgment).map(s => s.label)).toEqual(['核心判断', '推理'])
   })
 
   it('omits headings whose values are empty', () => {
     expect(getVisibleJudgmentSections({ core_judgment: '核心', reasoning: '' }))
-      .toEqual([{ key: 'core_judgment', label: '核心判断', value: '核心', prominent: true }])
+      .toEqual([{
+        key: 'core_judgment',
+        label: '核心判断',
+        value: '核心',
+        prominent: true,
+        hideLabel: true,
+      }])
   })
 })

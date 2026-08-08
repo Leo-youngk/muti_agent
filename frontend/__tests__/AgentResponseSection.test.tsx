@@ -27,19 +27,45 @@ const judgment = {
 }
 
 describe('AgentResponseSection', () => {
-  it('renders every field by default without an expand control or avatar', () => {
+  it('leads with judgment and reasoning, without secondary fields or avatar', () => {
     render(<AgentResponseSection index={0} meta={meta} status="done" judgment={judgment} />)
 
     expect(screen.getByText('01')).toBeInTheDocument()
     expect(screen.getByText('分析 Agent')).toBeInTheDocument()
-    for (const text of [
-      '核心内容', '完整推理', '主要批评', '焦点正文',
-      '改变正文', '切入方式', '潜在盲点',
-    ]) {
+    for (const text of ['核心内容', '完整推理']) {
       expect(screen.getByText(text)).toBeInTheDocument()
     }
-    expect(screen.queryByText(/展开完整判断/)).not.toBeInTheDocument()
+    expect(screen.queryByText('主要批评')).not.toBeInTheDocument()
+    // 版面层级已区分核心判断与推理，不再为它们保留小标题
+    expect(screen.queryByRole('heading', { name: '核心判断' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: '推理' })).not.toBeInTheDocument()
     expect(screen.queryByLabelText('分析 Agent 头像')).not.toBeInTheDocument()
+  })
+
+  it('does not render removed secondary fields', () => {
+    const { container } = render(
+      <AgentResponseSection index={0} meta={meta} status="done" judgment={judgment} />,
+    )
+
+    expect(container.querySelector('details')).not.toBeInTheDocument()
+    expect(screen.queryByText(/展开完整判断/)).not.toBeInTheDocument()
+    for (const text of ['焦点正文', '改变正文', '切入方式', '潜在盲点']) {
+      expect(screen.queryByText(text)).not.toBeInTheDocument()
+    }
+  })
+
+  it('does not render an expand control', () => {
+    const { container } = render(
+      <AgentResponseSection
+        index={0}
+        meta={meta}
+        status="done"
+        judgment={judgment}
+      />,
+    )
+
+    expect(container.querySelector('details')).not.toBeInTheDocument()
+    expect(screen.queryByText(/展开完整判断/)).not.toBeInTheDocument()
   })
 
   it('uses plain text for thinking and failure states', () => {
@@ -57,6 +83,26 @@ describe('AgentResponseSection', () => {
       />,
     )
     expect(screen.getByText(/请求失败：服务不可用/)).toBeInTheDocument()
+  })
+
+  it('renders markdown, including CJK-adjacent emphasis', () => {
+    const { container } = render(
+      <AgentResponseSection
+        index={0}
+        meta={meta}
+        status="done"
+        judgment={{
+          ...judgment,
+          core_judgment: '中文**加粗**中文',
+          reasoning: '- 第一条\n- 第二条\n\n最后 `code` 收尾',
+        }}
+      />,
+    )
+
+    // Streamdown 用 span[data-streamdown] 而非原生 strong/em 标签
+    expect(container.querySelector('[data-streamdown="strong"]')).toHaveTextContent('加粗')
+    expect(container.querySelectorAll('[data-streamdown="list-item"]')).toHaveLength(2)
+    expect(container.querySelector('code')).toHaveTextContent('code')
   })
 
   it('calls the inline follow-up and retry actions', () => {

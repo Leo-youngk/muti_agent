@@ -10,33 +10,32 @@ function safe<T>(fn: () => T, fallback: T): T {
   try { return fn() } catch { return fallback }
 }
 
-/** 迁移旧版 CrossAnalysis（conclusion.verdict → verdict）和 Dispute 格式 */
-function migrateAnalysis(threads: Thread[]): Thread[] {
+/** 加载后清理卡死的 thinking 状态（PWA 被杀时残留） */
+function healStaleStatus(threads: Thread[]): Thread[] {
   return threads.map(t => ({
     ...t,
     messages: t.messages.map(m => {
-      if (!m.panel?.analysis) return m
-      const a = m.panel.analysis as any
-      // 已经是新格式
-      if (a.verdict && !a.conclusion) return m
-      // 旧格式：从 conclusion 中提取
-      const c = a.conclusion
-      if (!c) return m
-      const migrated = {
-        disputes: (a.disputes || []).map((d: any) => ({
-          between: d.between,
-          clash: d.clash || d.topic || '',
-          a_says: d.a_says || d.a_position || '',
-          b_says: d.b_says || d.b_position || '',
-          trust: d.trust || d.who_to_trust || '',
-          why: d.why || d.trust_reason || '',
-        })),
-        verdict: c.verdict || '',
-        listen_to: c.top_voices || [],
-        blind_spot: c.biggest_blind_spot || '',
-        do_next: c.next_steps || [],
+      if (!m.panel) return m
+      const p = m.panel
+      if (!Object.values(p.advisorStatus).some(s => s === 'thinking')) return m
+      const staleIds = Object.entries(p.advisorStatus)
+        .filter(([, s]) => s === 'thinking')
+        .map(([id]) => id)
+      return {
+        ...m,
+        panel: {
+          ...p,
+          advisorStatus: Object.fromEntries(
+            Object.entries(p.advisorStatus).map(([id, s]) =>
+              [id, s === 'thinking' ? 'error' : s]
+            )
+          ) as Record<string, import('./types').AdvisorStatus>,
+          advisorErrors: {
+            ...p.advisorErrors,
+            ...Object.fromEntries(staleIds.map(id => [id, '应用被关闭，回答中断'])),
+          },
+        },
       }
-      return { ...m, panel: { ...m.panel, analysis: migrated } }
     }),
   }))
 }
@@ -50,7 +49,6 @@ function stripStreamingData(threads: Thread[]): Thread[] {
       const cleaned: PanelResult = {
         ...m.panel,
         streamingTexts: {},   // 不保存原始 token 流
-        analysisStream: '',   // 不保存分析的原始流
       }
       return { ...m, panel: cleaned }
     }),
@@ -64,24 +62,24 @@ export async function loadThreads(): Promise<Thread[]> {
   try {
     // 先尝试 IndexedDB
     const data = await get<Thread[]>(THREADS_KEY)
-    if (data && data.length > 0) return migrateAnalysis(data)
+    if (data && data.length > 0) return healStaleStatus(data)
 
     // 回退：从旧 localStorage 迁移
     const raw = localStorage.getItem('advisor_threads_v2')
     if (raw) {
       const threads = JSON.parse(raw) as Thread[]
       if (threads.length > 0) {
-        const migrated = migrateAnalysis(threads)
+        const migrated = threads
         await set(THREADS_KEY, stripStreamingData(migrated))
         localStorage.removeItem('advisor_threads_v2')
-        return migrated
+        return healStaleStatus(migrated)
       }
     }
     return []
   } catch {
     return safe(() => {
       const raw = localStorage.getItem('advisor_threads_v2') || localStorage.getItem(THREADS_KEY)
-      return raw ? migrateAnalysis(JSON.parse(raw) as Thread[]) : []
+      return raw ? healStaleStatus(JSON.parse(raw) as Thread[]) : []
     }, [])
   }
 }
@@ -101,7 +99,7 @@ export async function saveThreads(threads: Thread[]): Promise<void> {
 export function loadThreadsSync(): Thread[] {
   return safe(() => {
     const raw = localStorage.getItem('advisor_threads_v2') || localStorage.getItem(THREADS_KEY)
-    return raw ? migrateAnalysis(JSON.parse(raw) as Thread[]) : []
+    return raw ? healStaleStatus(JSON.parse(raw) as Thread[]) : []
   }, [])
 }
 
@@ -115,6 +113,12 @@ export const DEFAULT_SETTINGS: AppSettings = {
   customProfiles: {},
   customAdvisors: [],
   hiddenAdvisors: [],
+  // 高级参数：temperature 取 'auto'（由服务端决定是否传，兼容 kimi 等限制模型），
+  // maxTokensCap 16384（推理模型需要更大预算），timeoutMs 120s（慢模型足够）
+  temperature: 'auto',
+  maxTokensCap: 16384,
+  timeoutMs: 120_000,
+  theme: 'sage',
 }
 
 const LEGACY_PRESET_MODELS = [
@@ -194,7 +198,7 @@ export function threadToMarkdown(thread: Thread): string {
       lines.push(msg.content)
       lines.push('')
     } else if (msg.role === 'panel' && msg.panel) {
-      const { judgments, analysis } = msg.panel
+      const { judgments } = msg.panel
 
       for (const [, j] of Object.entries(judgments)) {
         if (!j) continue
@@ -204,34 +208,12 @@ export function threadToMarkdown(thread: Thread): string {
         lines.push('')
         lines.push(`**推理**：${j.reasoning}`)
         lines.push('')
-        lines.push(`**核心批评**：${j.criticism}`)
+        lines.push(`**核心批评**：${j.criticism ?? ''}`)
         lines.push('')
         if (j.focus) lines.push(`关注焦点：${j.focus}`)
         if (j.demand) lines.push(`要求改变：${j.demand}`)
         if (j.approach) lines.push(`如何切入：${j.approach}`)
-        lines.push(`盲点：${j.blind_spot}`)
-        lines.push('')
-      }
-
-      if (analysis) {
-        lines.push('### 主持人')
-        lines.push('')
-        if (analysis.disputes?.length > 0) {
-          lines.push('**核心分歧**')
-          for (const d of analysis.disputes) {
-            lines.push(`- **${d.between[0]} vs ${d.between[1]}**：${d.clash}`)
-            lines.push(`  - ${d.between[0]}：${d.a_says}`)
-            lines.push(`  - ${d.between[1]}：${d.b_says}`)
-            lines.push(`  - 听 ${d.trust}（${d.why}）`)
-          }
-          lines.push('')
-        }
-        lines.push(`**判断**：${analysis.verdict || ''}`)
-        lines.push(`**最值得听**：${(analysis.listen_to || []).join('、')}`)
-        lines.push(`**集体盲点**：${analysis.blind_spot || ''}`)
-        lines.push('')
-        lines.push('**马上该做**')
-        ;(analysis.do_next || []).forEach((s, i) => lines.push(`${i + 1}. ${s}`))
+        lines.push(`盲点：${j.blind_spot ?? ''}`)
         lines.push('')
       }
 

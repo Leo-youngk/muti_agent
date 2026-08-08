@@ -10,6 +10,8 @@ npm install        # 首次
 npm run test       # Vitest 单元测试
 npm run build      # 类型检查 + 生产构建（验证 TS 与 Next 编译）
 npm run lint       # ESLint（如有）
+npm run cf:build   # OpenNext Cloudflare 产物构建
+npm run preview    # 在 workerd/Wrangler 中做本地运行时验证
 ```
 
 > 注意：仓库根目录没有 `package.json`，`scripts/agent-validate.ps1` 在根目录运行时会检测不到可执行的验证命令（返回 exit 2）。针对前端验证请直接在 `frontend/` 目录运行上述命令。
@@ -52,6 +54,14 @@ npm run lint       # ESLint（如有）
 - 浏览器控制台没有新增错误
 
 如果当前环境无法做浏览器自动化验证，最终报告中必须明确说明“未运行 UI 浏览器验证”。
+
+## Cloudflare 部署验证
+
+- `wrangler types` 可读取并验证 `wrangler.jsonc`
+- `.open-next/worker.js` 与 `.open-next/assets` 成功生成
+- 本地 `workerd` 预览中 `/`、`/manifest.json` 和 `/api/chat/advisor` 可访问
+- 线上 Worker 首页和 PWA manifest 返回 2xx
+- Cloudflare 认证 Token 与模型 API Key 均不进入版本控制；BYOK 请求在缺少 Key 时返回可解释错误
 
 ## Bug 修复规则
 

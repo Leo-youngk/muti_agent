@@ -1,6 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 100 100">
-  <rect width="100" height="100" rx="22" fill="#0F5A54"/>
-  <rect x="24" y="27" width="52" height="6" rx="3" fill="white"/>
-  <rect x="24" y="47" width="42" height="6" rx="3" fill="white"/>
-  <rect x="24" y="67" width="48" height="6" rx="3" fill="white" opacity=".78"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
+  <rect width="32" height="32" rx="7" fill="#0D0D0D"/>
+  <text x="50%" y="53%" dominant-baseline="middle" text-anchor="middle"
+    font-family="-apple-system, 'PingFang SC', sans-serif"
+    font-size="13" font-weight="700" fill="white">讨</text>
 </svg>

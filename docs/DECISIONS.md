@@ -74,6 +74,16 @@
 
 ---
 
+### 使用 OpenNext 部署到 Cloudflare Workers，保留 BYOK
+
+决策：活跃的 `frontend/` 使用 `@opennextjs/cloudflare` 与 Wrangler 部署为 Cloudflare Worker，而不是 Cloudflare Pages。生产环境继续采用 BYOK，模型密钥由 PWA 设置按请求提供，不强制把模型 Key 集中保存为 Worker Secret。
+
+原因：项目包含 Next.js App Router Route Handlers 与 SSE，需要完整的服务端 Worker 运行时；BYOK 与当前本地优先、无账号体系的产品边界一致，也避免集中托管用户模型凭据。
+
+影响：部署入口为 `.open-next/worker.js`，静态资源由 `ASSETS` binding 提供；Windows 本机构建使用官方推荐的 WSL 环境。workers.dev 在部分网络不可达时，需要另行绑定自定义域名。
+
+---
+
 ## 遗留决策（历史，已不适用）
 
 以下为原始实现阶段的决策，当前前端主流程已不再依赖，保留仅供追溯：

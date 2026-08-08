@@ -5,21 +5,19 @@ type JudgmentKey = keyof Pick<
   AdvisorJudgment,
   | 'core_judgment'
   | 'reasoning'
-  | 'criticism'
-  | 'focus'
-  | 'demand'
-  | 'approach'
-  | 'blind_spot'
 >
 
-const FIELDS: Array<{ key: JudgmentKey; label: string; prominent?: boolean }> = [
-  { key: 'core_judgment', label: '核心判断', prominent: true },
-  { key: 'reasoning', label: '推理' },
-  { key: 'criticism', label: '核心批评' },
-  { key: 'focus', label: '关注焦点' },
-  { key: 'demand', label: '要求改变' },
-  { key: 'approach', label: '如何切入' },
-  { key: 'blind_spot', label: '盲点' },
+interface FieldSpec {
+  key: JudgmentKey
+  label: string
+  prominent?: boolean
+  /** 版面层级已足够区分，无需再占一行小标题 */
+  hideLabel?: boolean
+}
+
+const FIELDS: FieldSpec[] = [
+  { key: 'core_judgment', label: '核心判断', prominent: true, hideLabel: true },
+  { key: 'reasoning', label: '推理', hideLabel: true },
 ]
 
 export function formatAgentIndex(index: number): string {
@@ -39,7 +37,14 @@ export function getVisibleJudgmentSections(data?: Partial<AdvisorJudgment>) {
   return FIELDS.flatMap(field => {
     const value = data[field.key]?.trim()
     return value
-      ? [{ ...field, value, prominent: field.prominent === true }]
+      ? [{
+          ...field,
+          value,
+          prominent: field.prominent === true,
+          hideLabel: field.hideLabel === true,
+        }]
       : []
   })
 }
+
+export type JudgmentSection = ReturnType<typeof getVisibleJudgmentSections>[number]

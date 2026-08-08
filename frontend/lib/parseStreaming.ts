@@ -1,27 +1,39 @@
 import type { AdvisorJudgment, Stance } from './types'
 
 /**
+ * 预清理：去掉推理块，并剥掉包裹整个 JSON 的 markdown 围栏。
+ * 只处理最外层围栏——全局删除会把字段值里的代码块一起吃掉。
+ */
+export function stripThinkAndFence(raw: string): string {
+  const s = raw.replace(/<think>[\s\S]*?<\/think>/gi, '').trim()
+  const fence = /^(?:`{3,}|~{3,})[a-zA-Z]*[ \t]*\r?\n?([\s\S]*?)\r?\n?(?:`{3,}|~{3,})[ \t]*$/
+  const closed = s.match(fence)
+  if (closed) return closed[1]
+  // 流式中途：只有开头围栏，尚未闭合
+  const open = s.match(/^(?:`{3,}|~{3,})[a-zA-Z]*[ \t]*\r?\n?([\s\S]*)$/)
+  if (open) return open[1]
+  return s
+}
+
+/**
  * 从正在流式生成的 JSON 文本中，实时提取已完成的字段。
  * 返回 Partial<AdvisorJudgment>，每个已检测到的字段都可以立即渲染。
- *
- * 这让用户在生成完成前就能看到结构化内容，感知延迟从 ~10s 降到 ~1.5s。
  */
 export function extractStreamingFields(text: string): Partial<AdvisorJudgment> | null {
+  const cleaned = stripThinkAndFence(text)
   const result: Partial<AdvisorJudgment> = {}
   let hasAny = false
 
   const get = (key: string): string | undefined => {
-    // 匹配已完成的字段：key 后面有完整的 "value" 闭合引号
-    const m = text.match(new RegExp(`"${key}"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)"\\s*[,}]`))
+    const m = cleaned.match(new RegExp(`"${key}"\\s*:\\s*"((?:[^"\\\\]|\\\\[\\s\\S])*)"\\s*[,}\\n]`, 's'))
     if (!m) return undefined
-    return m[1]
+    return m[1].replace(/\r?\n/g, '')
       .replace(/\\n/g, '\n')
       .replace(/\\"/g, '"')
       .replace(/\\t/g, ' ')
       .replace(/\\\\/g, '\\')
   }
 
-  // 按 JSON 中字段出现顺序依次提取
   const advisor = get('advisor')
   if (advisor) { result.advisor = advisor; hasAny = true }
 
@@ -47,27 +59,24 @@ export function extractStreamingFields(text: string): Partial<AdvisorJudgment> |
     }
   }
 
-  // 特殊处理：core_judgment 可能还没闭合但已经有部分内容
-  // 提取正在生成中的字段（最后一个打开的字符串值）
   if (!result.core_judgment) {
-    const partial = getPartialValue(text, 'core_judgment')
+    const partial = getPartialValue(cleaned, 'core_judgment')
     if (partial) { result.core_judgment = partial + '…'; hasAny = true }
   }
   if (result.core_judgment && !result.reasoning) {
-    const partial = getPartialValue(text, 'reasoning')
+    const partial = getPartialValue(cleaned, 'reasoning')
     if (partial) { result.reasoning = partial + '…'; hasAny = true }
   }
 
   return hasAny ? result : null
 }
 
-/** 提取正在生成中（尚未闭合引号）的字段值 */
 function getPartialValue(text: string, key: string): string | undefined {
-  // 匹配 "key": "... 但没有闭合引号的情况
-  const pattern = new RegExp(`"${key}"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)$`)
+  const pattern = new RegExp(`"${key}"\\s*:\\s*"((?:[^"\\\\]|\\\\[\\s\\S])*)$`, 's')
   const m = text.match(pattern)
-  if (!m || m[1].length < 4) return undefined  // 太短的不值得显示
+  if (!m || m[1].length < 4) return undefined
   return m[1]
+    .replace(/\r?\n/g, '')
     .replace(/\\n/g, '\n')
     .replace(/\\"/g, '"')
     .replace(/\\t/g, ' ')

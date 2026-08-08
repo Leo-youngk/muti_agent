@@ -1,2 +1,23 @@
+# dependencies
+/node_modules
+
+# next.js / build output
+/.next/
+/out/
+/build
+
+# typescript / generated
+*.tsbuildinfo
+cloudflare-env.d.ts
+
+# deploy tooling
 .vercel
+.open-next
+.wrangler
+
+# 本地部署辅助（修复 Node v24 fs.cpSync 在中文路径崩溃；不要提交）
+fix-cp-sync.mjs
+
+# env / secrets
 .env*
+.dev.vars*

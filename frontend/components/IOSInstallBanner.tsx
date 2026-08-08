@@ -25,9 +25,7 @@ export default function IOSInstallBanner() {
   }
 
   return (
-    <div className="fixed inset-x-0 bottom-0 z-50 border-t border-[var(--line)] bg-[var(--page)] px-5"
-      style={{ paddingBottom: 'max(16px, env(safe-area-inset-bottom))' }}
-    >
+    <div className="shrink-0 border-t border-[var(--line)] bg-[var(--page)] px-5">
       <div className="mx-auto flex max-w-[680px] items-start gap-3 py-3 text-[var(--text)]">
         <div className="min-w-0 flex-1">
           <p className="mb-0.5 text-sm font-semibold">添加到主屏幕</p>

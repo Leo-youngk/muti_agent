@@ -1,8 +1,7 @@
 'use client'
 
-import { useMemo } from 'react'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
+import { memo, useMemo } from 'react'
+import { Streamdown } from 'streamdown'
 import type { AdvisorMeta } from '@/lib/advisors'
 import type { AdvisorJudgment, AdvisorStatus } from '@/lib/types'
 import { useCopy } from '@/lib/hooks'
@@ -10,6 +9,7 @@ import { extractStreamingFields } from '@/lib/parseStreaming'
 import {
   formatAgentIndex,
   getVisibleJudgmentSections,
+  type JudgmentSection,
 } from '@/lib/discussionPresentation'
 
 interface Props {
@@ -23,30 +23,35 @@ interface Props {
   onRetry?: () => void
 }
 
-function Markdown({ children }: { children: string }) {
+function Field({ section, streaming }: { section: JudgmentSection; streaming: boolean }) {
   return (
-    <ReactMarkdown
-      remarkPlugins={[remarkGfm]}
-      components={{
-        p: ({ children: content }) => <p className="mb-3 last:mb-0">{content}</p>,
-        ul: ({ children: content }) => (
-          <ul className="mb-3 list-disc space-y-1 pl-5 last:mb-0">{content}</ul>
-        ),
-        ol: ({ children: content }) => (
-          <ol className="mb-3 list-decimal space-y-1 pl-5 last:mb-0">{content}</ol>
-        ),
-        li: ({ children: content }) => <li>{content}</li>,
-        strong: ({ children: content }) => (
-          <strong className="font-semibold">{content}</strong>
-        ),
-      }}
-    >
-      {children}
-    </ReactMarkdown>
+    <section>
+      {!section.hideLabel && (
+        <h3 className="mb-1 text-xs font-semibold text-[var(--text-muted)]">
+          {section.label}
+        </h3>
+      )}
+      <Streamdown
+        mode={streaming ? 'streaming' : 'static'}
+        isAnimating={streaming}
+        animated={{ animation: 'fadeIn', sep: 'word', duration: 260 }}
+        controls={{ table: { copy: true, download: false, fullscreen: false }, code: false }}
+        lineNumbers={false}
+        className={[
+          // space-y-2 让 tailwind-merge 顶掉 Streamdown 默认的 space-y-4，把块间距收到 8px
+          'zen-prose space-y-2 text-[var(--text)]',
+          section.prominent
+            ? 'text-xl font-semibold leading-[1.5] tracking-[-0.01em]'
+            : 'text-base font-normal leading-[26px]',
+        ].join(' ')}
+      >
+        {section.value}
+      </Streamdown>
+    </section>
   )
 }
 
-export default function AgentResponseSection({
+function AgentResponseSection({
   index,
   meta,
   status,
@@ -77,11 +82,11 @@ export default function AgentResponseSection({
 
   return (
     <section
-      className="border-t border-[var(--line)] py-10 first:border-t-0"
+      className="py-6 first:pt-2"
       aria-labelledby={`agent-${index}`}
     >
-      <header className="mb-8">
-        <div className="flex items-baseline gap-4">
+      <header className="mb-5">
+        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
           <span className="text-[15px] tabular-nums text-[var(--text-faint)]">
             {formatAgentIndex(index)}
           </span>
@@ -91,41 +96,30 @@ export default function AgentResponseSection({
           >
             {meta.name}
           </h2>
+          {data?.stance && (
+            <p className="text-[13px] text-[var(--text-muted)]">{data.stance}</p>
+          )}
         </div>
-        {data?.stance && (
-          <p className="mt-2 text-[13px] text-[var(--text-muted)]">{data.stance}</p>
-        )}
         {status === 'thinking' && sections.length === 0 && (
-          <p className="mt-4 text-[13px] text-[var(--text-muted)]">正在思考…</p>
+          <p className="mt-2 text-[13px] text-[var(--text-muted)]">正在思考…</p>
         )}
       </header>
 
       {sections.length > 0 && (
-        <div className="space-y-7">
+        <div className="space-y-4">
           {sections.map(section => (
-            <section key={section.key}>
-              <h3 className="mb-2 text-xs font-semibold text-[var(--text-muted)]">
-                {section.label}
-              </h3>
-              <div
-                className={section.prominent
-                  ? 'text-xl font-semibold leading-[1.55] text-[var(--text)]'
-                  : 'text-base font-normal leading-7 text-[var(--text)]'}
-              >
-                <Markdown>{section.value}</Markdown>
-              </div>
-            </section>
+            <Field key={section.key} section={section} streaming={isStreaming} />
           ))}
         </div>
       )}
 
       {isStreaming && (
-        <p className="mt-7 text-[13px] text-[var(--text-muted)]">正在生成…</p>
+        <p className="mt-4 text-[13px] text-[var(--text-muted)]">正在生成…</p>
       )}
 
-      {status === 'error' && !judgment && (
+      {status === 'error' && (
         <p className="text-sm leading-6 text-[var(--error)]">
-          请求失败{errorDetail ? `：${errorDetail}` : ''}。
+          {judgment ? '生成中断' : '请求失败'}{errorDetail ? `：${errorDetail}` : ''}。
           {onRetry && (
             <button
               onClick={onRetry}
@@ -137,8 +131,20 @@ export default function AgentResponseSection({
         </p>
       )}
 
+      {status === 'idle' && !judgment && sections.length === 0 && onRetry && (
+        <p className="text-sm leading-6 text-[var(--text-muted)]">
+          已停止。
+          <button
+            onClick={onRetry}
+            className="ml-2 min-h-11 text-[var(--action)] underline underline-offset-4"
+          >
+            生成本节
+          </button>
+        </p>
+      )}
+
       {(onFollowUp || judgment) && (
-        <div className="mt-7 flex flex-wrap gap-x-6 text-sm">
+        <div className="-mb-2 mt-2 flex flex-wrap gap-x-6 text-[13px]">
           {onFollowUp && (
             <button
               onClick={onFollowUp}
@@ -160,3 +166,5 @@ export default function AgentResponseSection({
     </section>
   )
 }
+
+export default memo(AgentResponseSection)

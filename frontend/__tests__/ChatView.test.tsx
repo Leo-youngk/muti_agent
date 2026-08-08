@@ -40,8 +40,6 @@ function messagesFor(advisors: AdvisorMeta[]): Message[] {
     advisorStatus,
     judgments,
     streamingTexts: {},
-    analysisStatus: 'idle',
-    analysisStream: '',
   }
 
   return [
@@ -52,11 +50,7 @@ function messagesFor(advisors: AdvisorMeta[]): Message[] {
 
 const callbacks = {
   onFollowUp: vi.fn(),
-  onRegenerate: vi.fn(),
   onRetryAdvisor: vi.fn(),
-  onStartDiscussion: vi.fn(),
-  onContinueDiscussion: vi.fn(),
-  onDebate: vi.fn(),
 }
 
 beforeAll(() => {
@@ -84,14 +78,53 @@ describe('ChatView', () => {
 
     const headings = screen.getAllByRole('heading', { level: 2 }).map(node => node.textContent)
     expect(headings).toEqual(['Agent 0', 'Agent 1', 'Agent 2', 'Agent 3', 'Agent 4', 'Agent 5'])
-    expect(screen.getByText('用户问题正文')).toHaveClass('text-[19px]')
-    expect(screen.queryByText(/\/6|进度|展开完整判断/)).not.toBeInTheDocument()
+    expect(screen.getByText('用户问题正文')).toHaveClass('text-[15px]')
+    expect(screen.queryByText(/\/6|进度/)).not.toBeInTheDocument()
   })
 
-  it('does not offer another multi-agent round for one agent', () => {
+  it('does not offer removed round actions', () => {
     renderView([advisor(0)])
 
-    expect(screen.getByRole('button', { name: '继续讨论' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '继续讨论' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '重新生成本轮' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '发起下一轮讨论' })).not.toBeInTheDocument()
+  })
+
+  it('keeps per-section retry after Stop', () => {
+    const advisors = [advisor(0), advisor(1)]
+    const map = Object.fromEntries(advisors.map(item => [item.id, item]))
+    // Post-Stop: one agent finished, the other was interrupted to 'idle' with no judgment.
+    const panel: PanelResult = {
+      advisorStatus: { a0: 'done', a1: 'idle' },
+      judgments: {
+        a0: {
+          advisor: 'Agent 0',
+          stance: '支持',
+          core_judgment: 'Agent 0 核心',
+          reasoning: 'Agent 0 推理',
+          criticism: 'Agent 0 批评',
+          blind_spot: 'Agent 0 盲点',
+        },
+      },
+      streamingTexts: {},
+    }
+    const messages: Message[] = [
+      { id: 'user-1', role: 'user', content: '用户问题正文' },
+      { id: 'panel-1', role: 'panel', content: '', panel },
+    ]
+
+    render(
+      <AdvisorProvider value={map}>
+        <ChatView
+          {...callbacks}
+          advisors={advisors}
+          messages={messages}
+          isStreaming={false}
+        />
+      </AdvisorProvider>,
+    )
+
+    // The interrupted section offers a per-section retry.
+    expect(screen.getByRole('button', { name: '生成本节' })).toBeInTheDocument()
   })
 })

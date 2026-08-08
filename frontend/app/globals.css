@@ -1,3 +1,5 @@
+@import 'streamdown/styles.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -9,8 +11,83 @@
   --text-muted: #6e7471;
   --text-faint: #909693;
   --line: #e5e7e5;
+  --bubble: #eef1ef;
   --action: #0f5a54;
   --error: #a63e35;
+}
+
+[data-theme='ocean'] {
+  --page: #f4f8fb;
+  --surface: #ffffff;
+  --text: #17232e;
+  --text-muted: #607080;
+  --text-faint: #91a0ad;
+  --line: #dce7ee;
+  --bubble: #e1f0f5;
+  --action: #176b80;
+  --error: #a63e35;
+}
+
+[data-theme='midnight'] {
+  --page: #17191d;
+  --surface: #202329;
+  --text: #f2f4f3;
+  --text-muted: #b2b8b7;
+  --text-faint: #7f8887;
+  --line: #363b40;
+  --bubble: #2d3b40;
+  --action: #7bd1bf;
+  --error: #f18b83;
+}
+
+[data-theme='rose'] {
+  --page: #fff8f7;
+  --surface: #ffffff;
+  --text: #302024;
+  --text-muted: #806a70;
+  --text-faint: #b39da2;
+  --line: #f0dfe2;
+  --bubble: #fbe8eb;
+  --action: #a84b64;
+  --error: #b7463e;
+}
+
+[data-theme='amber'] {
+  --page: #fffbf2;
+  --surface: #ffffff;
+  --text: #30291c;
+  --text-muted: #81735a;
+  --text-faint: #b4a586;
+  --line: #eee4ce;
+  --bubble: #fff0c9;
+  --action: #9a6718;
+  --error: #af493d;
+}
+
+/* Streamdown 正文密度：默认按英文长文排版，这里压回本项目的紧凑中文行距。
+   块间距由根节点的 space-y-2 统一给 8px（见 AgentResponseSection）。
+   注意：space-y-* 的选择器特异度是 (0,3,0)，普通元素选择器压不动它，
+   所以标题的例外间距必须写成同形状的兄弟选择器。 */
+.zen-prose > * { margin: 0; }
+.zen-prose > :not([hidden]) ~ :is(h1, h2, h3, h4, h5, h6):not([hidden]) { margin-top: 1em; }
+.zen-prose > :is(h1, h2, h3, h4, h5, h6):not([hidden]) + :not([hidden]) { margin-top: 0.25em; }
+.zen-prose h1,
+.zen-prose h2,
+.zen-prose h3,
+.zen-prose h4,
+.zen-prose h5,
+.zen-prose h6 { line-height: 1.4; }
+.zen-prose ul,
+.zen-prose ol { padding-left: 1.35em; list-style-position: outside; }
+/* Streamdown 给 li 挂了 py-1，会把行距顶开一倍，这里收回来 */
+.zen-prose li { margin: 0.15em 0; padding-top: 0; padding-bottom: 0; }
+.zen-prose li > p { margin: 0; }
+.zen-prose a { color: var(--action); text-underline-offset: 3px; }
+/* 行内代码：Streamdown 默认 bg-muted，这里补足内距与字号 */
+.zen-prose :not(pre) > code {
+  padding: 0.1em 0.34em;
+  border-radius: 4px;
+  font-size: 0.9em;
 }
 
 @keyframes cursor-blink {
@@ -18,11 +95,68 @@
   50%       { opacity: 0; }
 }
 
+/* 底部抽屉 / 弹层动画（DeepSeek 式顺滑上滑） */
+@keyframes zen-sheet-up {
+  from { transform: translateY(28px); opacity: 0; }
+  to   { transform: translateY(0); opacity: 1; }
+}
+.zen-sheet {
+  animation: zen-sheet-up 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes zen-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.zen-fade {
+  animation: zen-fade-in 0.2s ease-out;
+}
+
+/* 设置页滑块（DeepSeek 风格细轨道 + 圆形滑块） */
+input[type='range'].zen-range {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 4px;
+  border-radius: 9999px;
+  background: linear-gradient(to right, var(--action) var(--fill, 50%), var(--line) var(--fill, 50%));
+  outline: none;
+  cursor: pointer;
+}
+input[type='range'].zen-range:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+input[type='range'].zen-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--surface);
+  border: 1.5px solid var(--action);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18);
+  transition: transform 0.12s ease;
+}
+input[type='range'].zen-range:active::-webkit-slider-thumb {
+  transform: scale(1.12);
+}
+input[type='range'].zen-range::-moz-range-thumb {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--surface);
+  border: 1.5px solid var(--action);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18);
+}
+
 html, body {
   height: 100%;
   overflow: hidden;
-  /* iOS PWA: 防止橡皮筋滚动和外框滑动 */
+  /* iOS PWA: 防止橡皮筋滚动和外框滑动。
+     iOS Safari 不支持 overscroll-behavior，横向滑动只能靠 touch-action 拦。 */
   overscroll-behavior: none;
+  touch-action: pan-y;
   position: fixed;
   width: 100%;
 }
@@ -36,7 +170,7 @@ body {
 }
 
 ::selection {
-  background: #dce8e4;
+  background: var(--bubble);
   color: var(--text);
 }
 
@@ -55,8 +189,8 @@ body {
 @media (hover: hover) {
   ::-webkit-scrollbar { width: 5px; }
   ::-webkit-scrollbar-track { background: transparent; }
-  ::-webkit-scrollbar-thumb { background: #D5D0CB; border-radius: 9999px; }
-  ::-webkit-scrollbar-thumb:hover { background: #C5C0BA; }
+  ::-webkit-scrollbar-thumb { background: var(--line); border-radius: 9999px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--text-faint); }
 }
 
 @media (prefers-reduced-motion: reduce) {
