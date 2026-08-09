@@ -1,7 +1,8 @@
 import OpenAI from 'openai'
-import type { AdvisorJudgment, HistoryMessage, PreviousJudgment, AdvisorId } from '@/lib/types'
+import type { AdvisorJudgment, PriorTurn, PreviousJudgment, AdvisorId } from '@/lib/types'
 import {
-  buildAdvisorSystemPrompt, buildFollowUpSystemAddendum, buildDebateSystemPrompt,
+  buildAdvisorSystemPrompt, buildOthersAddendum, buildDebateSystemPrompt,
+  serializeJudgmentTurn,
   parseJSON, extractPartialAdvisorJudgment, MAX_TOKENS_HARD_CAP,
   createSSEHelpers, makeSSEResponse, sleep,
 } from '../shared'
@@ -12,7 +13,8 @@ export const maxDuration = 120
 export async function POST(request: Request) {
   let body: {
     task?: string
-    history?: HistoryMessage[]
+    priorTurn?: PriorTurn
+    isFollowUp?: boolean
     model?: string
     clientApiKey?: string
     clientBaseUrl?: string
@@ -76,7 +78,6 @@ export async function POST(request: Request) {
     }
   }
 
-  const history: HistoryMessage[] = (body.history ?? []).slice(-6)
   const client = new OpenAI({ apiKey, baseURL })
   const advisorId = body.advisorId
   const advisorName = body.advisorName
@@ -98,10 +99,20 @@ export async function POST(request: Request) {
         } else {
           systemPrompt = buildAdvisorSystemPrompt(profile)
           if (body.previousJudgments && body.previousJudgments.length > 0) {
-            const addendum = buildFollowUpSystemAddendum(body.previousJudgments, advisorId as AdvisorId)
-            if (addendum) systemPrompt += addendum
+            systemPrompt += buildOthersAddendum(
+              body.previousJudgments, advisorId as AdvisorId, body.isFollowUp === true,
+            )
           }
         }
+
+        // 上一轮还原成真实的 user/assistant 对：assistant 轮必须是合法 JSON，
+        // 模型对上一条 assistant 的格式模仿远强于 system prompt，喂纯文本摘要会让它这轮也吐纯文本。
+        const priorMessages = body.priorTurn
+          ? [
+              { role: 'user' as const, content: body.priorTurn.question },
+              { role: 'assistant' as const, content: serializeJudgmentTurn(body.priorTurn.judgment) },
+            ]
+          : []
 
         send({ event: 'advisor_start', advisorId })
 
@@ -110,6 +121,9 @@ export async function POST(request: Request) {
         // 首次失败且错误含 "temperature" 时去掉该参数重试，不消耗重试次数。
         let temperature: number | undefined = initialTemperature
         let degraded = false
+        // 部分网关/推理模型不认 response_format，报错后去掉重试，同样不消耗重试次数
+        let jsonMode = true
+        let jsonModeDegraded = false
         for (let attempt = 0; attempt <= 2; attempt++) {
           if (clientAborted) break
           if (attempt > 0) await sleep(500 + 500 * attempt)  // 1s, 1.5s
@@ -124,10 +138,11 @@ export async function POST(request: Request) {
               {
                 model,
                 ...(temperature !== undefined ? { temperature } : {}),
+                ...(jsonMode ? { response_format: { type: 'json_object' as const } } : {}),
                 max_tokens: maxTokens, stream: true,
                 messages: [
                   { role: 'system', content: systemPrompt },
-                  ...history.map(h => ({ role: h.role as 'user' | 'assistant', content: h.content })),
+                  ...priorMessages,
                   { role: 'user', content: task },
                 ],
               },
@@ -178,6 +193,15 @@ export async function POST(request: Request) {
               degraded = true
               temperature = undefined
               attempt--   // 参数降级不算一次重试
+              continue
+            }
+
+            // 模型不支持 JSON 模式：去掉 response_format 后重试，只降级一次
+            if (!isTimeout && !isRateLimit && !jsonModeDegraded && jsonMode
+                && /response_format|json_object|json mode/i.test(errMsg)) {
+              jsonModeDegraded = true
+              jsonMode = false
+              attempt--
               continue
             }
 

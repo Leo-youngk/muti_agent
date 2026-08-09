@@ -32,9 +32,24 @@ ${profile}
 }`
 }
 
-export function buildFollowUpSystemAddendum(previousJudgments: PreviousJudgment[], targetId: AdvisorId): string {
-  const others = previousJudgments.filter(p => p.advisorId !== targetId)
+export function buildOthersAddendum(
+  previousJudgments: PreviousJudgment[],
+  selfId: AdvisorId,
+  isFollowUp: boolean,
+): string {
+  const others = previousJudgments.filter(p => p.advisorId !== selfId)
   if (others.length === 0) return ''
+
+  if (!isFollowUp) {
+    const lines = others.map(({ judgment: j }) => `${j.advisor}（${j.stance}）：${j.core_judgment}`)
+    return `
+
+=== 背景：其他人对这件事的判断 ===
+${lines.join('\n')}
+=== 背景结束 ===
+
+这是给你的参考，不要复述他们的话。仍然只输出你自己的 JSON。`
+  }
 
   const blocks = others.map(({ judgment: j }) => {
     return `【${j.advisor}】立场：${j.stance}
@@ -46,7 +61,7 @@ export function buildFollowUpSystemAddendum(previousJudgments: PreviousJudgment[
 
   return `
 
-=== 重要背景：其他顾问在上一轮的完整判断 ===
+=== 重要背景：其他顾问的完整判断 ===
 ${blocks}
 === 背景结束 ===
 
@@ -56,6 +71,22 @@ ${blocks}
 3. 不要回避分歧。如果别人批评了你可能忽略的东西，正面应对。
 4. 你可以修正自己的立场，但必须说明为什么改变。
 5. 仍然按照原有 JSON 格式输出。`
+}
+
+/**
+ * 把上一轮判断还原成 assistant 轮的原文。
+ * 只序列化 prompt 里声明过的字段——把 focus/demand/approach 等历史遗留字段喂回去，
+ * 会诱导模型这一轮重新生成它们。
+ */
+export function serializeJudgmentTurn(j: AdvisorJudgment): string {
+  return JSON.stringify({
+    advisor: j.advisor,
+    stance: j.stance,
+    core_judgment: j.core_judgment,
+    reasoning: j.reasoning,
+    criticism: j.criticism,
+    blind_spot: j.blind_spot,
+  })
 }
 
 export function buildDebateSystemPrompt(profile: string, allJudgments: Record<string, AdvisorJudgment>, selfId: string): string {

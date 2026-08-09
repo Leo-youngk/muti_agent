@@ -88,9 +88,10 @@ export interface AppSettings {
   theme?: 'sage' | 'ocean' | 'midnight' | 'rose' | 'amber'
 }
 
-export interface HistoryMessage {
-  role: 'user' | 'assistant'
-  content: string
+/** 该 agent 上一次成功作答的问答对，作为下一轮对话里的 user/assistant 样例 */
+export interface PriorTurn {
+  question: string
+  judgment: AdvisorJudgment
 }
 
 export interface PreviousJudgment {

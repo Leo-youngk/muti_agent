@@ -4,7 +4,7 @@ import { useState, useCallback, useRef, useEffect } from 'react'
 import { v4 as uuidv4 } from 'uuid'
 import type {
   Message, Thread, PanelResult, StreamEvent, AdvisorId,
-  AdvisorJudgment, HistoryMessage, PreviousJudgment,
+  AdvisorJudgment, PriorTurn, PreviousJudgment,
   FollowUpMeta, AppSettings,
 } from './types'
 import { resolveProvider } from './storage'
@@ -59,44 +59,23 @@ async function runWithConcurrency<T>(
 
 // ─── 历史构建 ─────────────────────────────────────────────────────────────────
 
-export function buildHistory(messages: Message[], targetAdvisorId?: string | null): HistoryMessage[] {
-  const result: HistoryMessage[] = []
-  for (const msg of messages) {
-    if (msg.role === 'user') {
-      result.push({ role: 'user', content: msg.content })
-    } else if (msg.role === 'panel' && msg.panel) {
-      const { judgments } = msg.panel
-      const parts: string[] = []
-
-      if (targetAdvisorId) {
-        // 追问模式：带上自己的立场 + 其他人一句话摘要
-        const targetJ = judgments[targetAdvisorId]
-        if (targetJ) {
-          parts.push(`[你的上轮判断] ${targetJ.stance}：${targetJ.core_judgment}`)
-        }
-        const otherLines = Object.entries(judgments)
-          .filter(([id, j]) => id !== targetAdvisorId && j != null)
-          .map(([, j]) => `${j!.advisor}(${j!.stance})：${j!.core_judgment}`)
-        if (otherLines.length > 0) {
-          parts.push(`[其他] ${otherLines.join('；')}`)
-        }
-      } else {
-        // 普通模式：极简摘要，只带立场
-        const advisorLines = Object.values(judgments)
-          .filter((j): j is AdvisorJudgment => j != null)
-          .map(j => `${j.advisor}(${j.stance})`)
-        if (advisorLines.length > 0) {
-          parts.push(`[上轮] ${advisorLines.join('、')}`)
-        }
-      }
-
-      if (parts.length > 0) {
-        result.push({ role: 'assistant', content: parts.join('\n') })
-      }
+/**
+ * 取该 agent 最近一次成功作答的「提问 + 它自己的判断」。
+ * 服务端会把它还原成一对 user/assistant 消息，assistant 轮是合法 JSON——
+ * 模型模仿上一条 assistant 的格式，喂纯文本摘要会让它这轮也不输出 JSON。
+ */
+export function buildPriorTurn(messages: Message[], advisorId: AdvisorId): PriorTurn | null {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i]
+    if (msg.role !== 'panel' || !msg.panel) continue
+    const judgment = msg.panel.judgments[advisorId]
+    if (!judgment) continue
+    for (let k = i - 1; k >= 0; k--) {
+      if (messages[k].role === 'user') return { question: messages[k].content, judgment }
     }
+    return null
   }
-  // 只保留最近 2 轮对话（4 条消息），避免 context 膨胀
-  return result.slice(targetAdvisorId ? -6 : -4)
+  return null
 }
 
 /** 收集所有面板中的最新判断（后出的覆盖先出的） */
@@ -407,10 +386,13 @@ export function useStreaming(
     const advisor = activeAdvisors.find(a => a.id === advisorId)
     if (!advisor) return
 
-    const history = buildHistory(messages)
     const apiBase = makeApiBase(settings, selectedModel)
     const customProfile = settings.customProfiles[advisorId as keyof typeof settings.customProfiles]
     const advisorWithProfile = customProfile ? { ...advisor, profile: customProfile } : advisor
+
+    const priorTurn = buildPriorTurn(messages, advisorId)
+    const previousJudgments = buildPreviousJudgments(messages)
+    const isFollowUp = messages.find(m => m.id === panelMsgId)?.followUpMeta?.isFollowUp === true
 
     updatePanel(threadId, panelMsgId, p => ({
       ...p,
@@ -427,7 +409,12 @@ export function useStreaming(
 
     try {
       await fetchSingleAdvisor(
-        advisorWithProfile, { ...apiBase, task, history },
+        advisorWithProfile,
+        {
+          ...apiBase, task, isFollowUp,
+          ...(previousJudgments.length > 0 ? { previousJudgments } : {}),
+          ...(priorTurn ? { priorTurn } : {}),
+        },
         threadId, panelMsgId, globalAbort.signal,
       )
     } finally {
@@ -472,8 +459,7 @@ export function useStreaming(
     tokenBuffer.current.advisorTokens = {}
 
     const currentMessages = threads.find(t => t.id === tid)?.messages ?? []
-    const history = buildHistory(currentMessages, isFollowUp ? targetAdvisor : null)
-    const previousJudgments = isFollowUp ? buildPreviousJudgments(currentMessages) : []
+    const previousJudgments = buildPreviousJudgments(currentMessages)
 
     const userMsg: Message = { id: uuidv4(), role: 'user', content: task }
     const panelMsgId = uuidv4()
@@ -506,12 +492,17 @@ export function useStreaming(
       })
 
       const basePayload: Record<string, unknown> = {
-        ...apiBase, task, history,
+        ...apiBase, task, isFollowUp,
         ...(previousJudgments.length > 0 ? { previousJudgments } : {}),
       }
 
       const advisorTasks = advisorsWithProfiles.map(advisor => async () => {
-        return fetchSingleAdvisor(advisor, basePayload, tid, panelMsgId, globalAbort.signal)
+        const priorTurn = buildPriorTurn(currentMessages, advisor.id as AdvisorId)
+        return fetchSingleAdvisor(
+          advisor,
+          priorTurn ? { ...basePayload, priorTurn } : basePayload,
+          tid, panelMsgId, globalAbort.signal,
+        )
       })
 
       await runWithConcurrency(advisorTasks, ADVISOR_CONCURRENCY, ADVISOR_STAGGER_MS)
