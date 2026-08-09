@@ -1,4 +1,14 @@
 import type { AdvisorId, AppSettings, CustomAdvisor } from './types'
+import { PG_PROFILE } from './profiles/pg'
+import { BEZOS_PROFILE } from './profiles/bezos'
+import { TALEB_PROFILE } from './profiles/taleb'
+import { REN_PROFILE } from './profiles/ren'
+import { ZHANGYIMING_PROFILE } from './profiles/zhangyiming'
+import { HOROWITZ_PROFILE } from './profiles/horowitz'
+import { LKY_PROFILE } from './profiles/lky'
+import { HUANGZHENG_PROFILE } from './profiles/huangzheng'
+import { KK_PROFILE } from './profiles/kk'
+import { LUXUN_PROFILE } from './profiles/luxun'
 
 export interface AdvisorMeta {
   id: AdvisorId
@@ -8,6 +18,8 @@ export interface AdvisorMeta {
   tagline: string
   icon: string
   profile: string
+  /** 首次见到这个 agent 的用户默认不启用它——面板每多一位就多一次并发调用 */
+  defaultHidden?: boolean
 }
 
 // ─── 四份人物档案 ──────────────────────────────────────────────────────────────
@@ -214,7 +226,113 @@ export const ADVISORS: AdvisorMeta[] = [
     icon: '◆',
     profile: MUNGER_PROFILE,
   },
+  {
+    id: 'pg',
+    name: '保罗·格雷厄姆',
+    nameEn: 'Paul Graham',
+    color: '#10B981',
+    tagline: '做人们真正想要的东西',
+    icon: '✦',
+    profile: PG_PROFILE,
+    defaultHidden: true,
+  },
+  {
+    id: 'bezos',
+    name: '贝索斯',
+    nameEn: 'Jeff Bezos',
+    color: '#F97316',
+    tagline: '单向门与双向门',
+    icon: '▲',
+    profile: BEZOS_PROFILE,
+    defaultHidden: true,
+  },
+  {
+    id: 'taleb',
+    name: '塔勒布',
+    nameEn: 'Nassim Taleb',
+    color: '#EF4444',
+    tagline: '只看尾部风险',
+    icon: '✱',
+    profile: TALEB_PROFILE,
+    defaultHidden: true,
+  },
+  {
+    id: 'ren',
+    name: '任正非',
+    nameEn: 'Ren Zhengfei',
+    color: '#F59E0B',
+    tagline: '活下去是最高纲领',
+    icon: '⬢',
+    profile: REN_PROFILE,
+    defaultHidden: true,
+  },
+  {
+    id: 'zhangyiming',
+    name: '张一鸣',
+    nameEn: 'Zhang Yiming',
+    color: '#06B6D4',
+    tagline: '延迟满足，用数据验证',
+    icon: '⬡',
+    profile: ZHANGYIMING_PROFILE,
+    defaultHidden: true,
+  },
+  {
+    id: 'horowitz',
+    name: '本·霍洛维茨',
+    nameEn: 'Ben Horowitz',
+    color: '#8B5CF6',
+    tagline: '没有好选择时怎么选',
+    icon: '◐',
+    profile: HOROWITZ_PROFILE,
+    defaultHidden: true,
+  },
+  {
+    id: 'lky',
+    name: '李光耀',
+    nameEn: 'Lee Kuan Yew',
+    color: '#6366F1',
+    tagline: '只问行不行得通',
+    icon: '■',
+    profile: LKY_PROFILE,
+    defaultHidden: true,
+  },
+  {
+    id: 'huangzheng',
+    name: '黄峥',
+    nameEn: 'Huang Zheng',
+    color: '#14B8A6',
+    tagline: '把常识倒过来看',
+    icon: '○',
+    profile: HUANGZHENG_PROFILE,
+    defaultHidden: true,
+  },
+  {
+    id: 'kk',
+    name: '凯文·凯利',
+    nameEn: 'Kevin Kelly',
+    color: '#84CC16',
+    tagline: '一百年的尺度',
+    icon: '❋',
+    profile: KK_PROFILE,
+    defaultHidden: true,
+  },
+  {
+    id: 'luxun',
+    name: '鲁迅',
+    nameEn: 'Lu Xun',
+    color: '#6B7280',
+    tagline: '剥掉漂亮的词',
+    icon: '▚',
+    profile: LUXUN_PROFILE,
+    defaultHidden: true,
+  },
 ]
+
+/** 默认不参与面板的内置 agent，首次加载时写进 hiddenAdvisors */
+export const DEFAULT_HIDDEN_ADVISOR_IDS = ADVISORS.filter(a => a.defaultHidden).map(a => a.id)
+
+/** 内置阵容版本。每次新增默认隐藏的内置 agent 时 +1，老用户的面板才不会被自动撑大 */
+export const ADVISOR_ROSTER_VERSION = 2
 
 export const ADVISOR_MAP: Record<string, AdvisorMeta> = Object.fromEntries(
   ADVISORS.map(a => [a.id, a])

@@ -1,7 +1,10 @@
 export type Stance = '支持' | '反对' | '有条件支持' | '需要更多信息'
 
 /** 内置顾问的固定 ID */
-export type BuiltinAdvisorId = 'jobs' | 'musk' | 'buffett' | 'munger'
+export type BuiltinAdvisorId =
+  | 'jobs' | 'musk' | 'buffett' | 'munger'
+  | 'pg' | 'bezos' | 'taleb' | 'ren' | 'zhangyiming' | 'horowitz'
+  | 'lky' | 'huangzheng' | 'kk' | 'luxun'
 
 /** 顾问 ID 可以是内置 ID 或用户自定义 ID（字符串）*/
 export type AdvisorId = string
@@ -79,6 +82,8 @@ export interface AppSettings {
   customAdvisors: CustomAdvisor[]
   /** 从面板中隐藏的顾问 ID（内置 + 自定义均可） */
   hiddenAdvisors: string[]
+  /** 已应用到 hiddenAdvisors 的内置阵容版本，用于把后来新增的内置 agent 默认隐藏 */
+  advisorRosterVersion?: number
   /** 高级参数：采样温度（undefined / 'auto' 表示不传，让服务端自己降级） */
   temperature?: number | 'auto'
   /** 高级参数：单次调用 max_tokens 上限（undefined 用服务端默认 16384） */

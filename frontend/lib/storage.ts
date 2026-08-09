@@ -1,5 +1,6 @@
 import { get, set } from 'idb-keyval'
 import type { Thread, AppSettings, PanelResult } from './types'
+import { DEFAULT_HIDDEN_ADVISOR_IDS, ADVISOR_ROSTER_VERSION } from './advisors'
 
 const THREADS_KEY = 'advisor_threads_v3'
 const SETTINGS_KEY = 'advisor_settings_v2'
@@ -128,8 +129,18 @@ const LEGACY_PRESET_MODELS = [
 export function loadSettings(): AppSettings {
   return safe(() => {
     const raw = localStorage.getItem(SETTINGS_KEY)
-    const s: AppSettings = raw ? { ...DEFAULT_SETTINGS, ...JSON.parse(raw) } : DEFAULT_SETTINGS
+    const s: AppSettings = { ...DEFAULT_SETTINGS, ...(raw ? JSON.parse(raw) : {}) }
     if (!s.providers) s.providers = []
+
+    // 新增的内置 agent 一律默认隐藏：面板每多一位就多一次并发调用，
+    // 不能让老用户下一次提问突然扇出到十几个 agent。只在版本落后时执行一次。
+    if ((s.advisorRosterVersion ?? 0) < ADVISOR_ROSTER_VERSION) {
+      const hidden = new Set(s.hiddenAdvisors ?? [])
+      DEFAULT_HIDDEN_ADVISOR_IDS.forEach(id => hidden.add(id))
+      s.hiddenAdvisors = Array.from(hidden)
+      s.advisorRosterVersion = ADVISOR_ROSTER_VERSION
+      localStorage.setItem(SETTINGS_KEY, JSON.stringify(s))
+    }
 
     // 迁移：旧版单 apiKey/baseUrl → provider
     if (s.providers.length === 0 && (s.apiKey || s.baseUrl)) {
