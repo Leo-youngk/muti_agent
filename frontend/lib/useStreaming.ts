@@ -312,8 +312,13 @@ export function useStreaming(
 
         const completed = await readSSEStream(res, {
           onAdvisorStart: () => {
+            // 服务端每次重试都会重发 advisor_start。不清掉上一次尝试已经显示出来的
+            // 半截输出，两次内容会直接叠在一起。
+            delete tokenBuffer.current.advisorTokens[advisorId]
             updatePanel(tid, panelMsgId, p => ({
-              ...p, advisorStatus: { ...p.advisorStatus, [advisorId]: 'thinking' },
+              ...p,
+              advisorStatus: { ...p.advisorStatus, [advisorId]: 'thinking' },
+              streamingTexts: { ...p.streamingTexts, [advisorId]: '' },
             }))
           },
           onAdvisorToken: (token) => {
