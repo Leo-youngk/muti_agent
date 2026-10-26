@@ -29,7 +29,7 @@ node --import ./fix-cp-sync.mjs node_modules/@opennextjs/cloudflare/dist/cli/ind
 - [x] 保留单 Agent 追问、复制回答、失败重试和流式回答。
 - [x] 保留旧类型和历史数据字段，避免已有 IndexedDB/localStorage 数据迁移风险；旧辩论面板按普通 Agent 内容展示。
 
-验收结果：以计划文件 `.trae/documents/20260805-agent-flow-cleanup-plan.md` 为准，完成后运行 Vitest、tsc 和 Next build。
+验收结果：以归档计划 [2026-08-05-agent-flow-cleanup-plan.md](superpowers/plans/2026-08-05-agent-flow-cleanup-plan.md) 为准，完成后运行 Vitest、tsc 和 Next build。
 
 ### 2026-08-05 DeepSeek 式移动端 UI + 设置页滑块 + 模型自动加载
 

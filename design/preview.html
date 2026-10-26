@@ -1,0 +1,709 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>纸上顾问团 · UI 设计稿</title>
+<style>
+  /* ── 设计令牌 ───────────────────────────────────────────── */
+  :root {
+    --paper:        oklch(97.2% 0.008 85);
+    --paper-raised: oklch(98.6% 0.006 85);
+    --ink:          oklch(28% 0.015 70);
+    --ink-2:        oklch(40% 0.015 70);
+    --muted:        oklch(55% 0.012 70);
+    --faint:        oklch(65% 0.010 75);
+    --hairline:     oklch(88% 0.008 80);
+    --accent:       oklch(50% 0.15 30);
+    --accent-soft:  oklch(94% 0.03 35);
+
+    --jobs:    oklch(52% 0.14 28);
+    --musk:    oklch(50% 0.09 235);
+    --buffett: oklch(55% 0.10 80);
+    --munger:  oklch(50% 0.09 305);
+
+    --stance-yes:   oklch(50% 0.09 150);
+    --stance-no:    oklch(48% 0.13 28);
+    --stance-cond:  oklch(55% 0.10 75);
+    --stance-tbd:   oklch(55% 0.012 70);
+
+    --dur-1: 120ms; --dur-2: 240ms; --dur-3: 400ms;
+    --ease: cubic-bezier(0.25, 1, 0.5, 1);
+
+    --serif: "Noto Serif SC", "Songti SC", "STSong", "SimSun", serif;
+    --sans: -apple-system, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    font-family: var(--sans);
+    background: oklch(93.5% 0.008 80);
+    color: var(--ink);
+    padding: 48px 24px 64px;
+    font-size: 15px;
+    line-height: 1.75;
+  }
+
+  /* ── 展板 ──────────────────────────────────────────────── */
+  .board-head { max-width: 1280px; margin: 0 auto 32px; }
+  .board-head .kicker {
+    font-size: 12px; letter-spacing: .12em; color: var(--accent);
+    font-weight: 600; margin-bottom: 8px;
+  }
+  .board-head h1 {
+    font-family: var(--serif); font-size: 28px; font-weight: 700;
+    letter-spacing: .01em; margin-bottom: 6px;
+  }
+  .board-head p { font-size: 13px; color: var(--muted); }
+
+  .board {
+    max-width: 1280px; margin: 0 auto;
+    display: flex; gap: 28px; flex-wrap: wrap; align-items: flex-start;
+    justify-content: center;
+  }
+  .frame-col { display: flex; flex-direction: column; gap: 10px; }
+  .frame-label {
+    font-size: 12px; color: var(--muted); text-align: center; letter-spacing: .06em;
+  }
+
+  /* ── 手机框 ─────────────────────────────────────────────── */
+  .phone {
+    width: 375px; height: 780px; flex: none;
+    border-radius: 40px; background: var(--paper);
+    border: 1px solid oklch(85% 0.008 80);
+    box-shadow: 0 24px 64px -24px oklch(30% 0.02 70 / .25), 0 2px 8px oklch(30% 0.02 70 / .08);
+    overflow: hidden; display: flex; flex-direction: column;
+  }
+  .screen { flex: 1; overflow-y: auto; display: flex; flex-direction: column; }
+  .screen::-webkit-scrollbar { width: 0; }
+
+  /* ── 顶栏 ──────────────────────────────────────────────── */
+  .topbar {
+    display: flex; align-items: center; gap: 12px;
+    padding: 14px 16px 12px; border-bottom: 1px solid var(--hairline);
+    background: var(--paper);
+  }
+  .topbar .title {
+    flex: 1; text-align: center; font-size: 13px; font-weight: 600;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .iconbtn {
+    width: 32px; height: 32px; border-radius: 50%; flex: none;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--muted); border: none; background: transparent; cursor: pointer;
+    transition: background var(--dur-2) var(--ease);
+  }
+  .iconbtn:hover { background: oklch(94% 0.008 80); }
+
+  /* ── 空状态 ─────────────────────────────────────────────── */
+  .empty {
+    flex: 1; display: flex; flex-direction: column; align-items: center;
+    justify-content: center; padding: 24px 24px 16px; text-align: center;
+  }
+  .empty h2 { font-family: var(--serif); font-size: 22px; font-weight: 700; line-height: 1.5; margin-bottom: 8px; }
+  .empty .sub { font-size: 13px; color: var(--faint); margin-bottom: 24px; }
+  .roster {
+    width: 100%; background: var(--paper-raised);
+    border: 1px solid var(--hairline); border-radius: 14px;
+    padding: 4px 16px; margin-bottom: 20px; text-align: left;
+  }
+  .roster-row { display: flex; align-items: center; gap: 12px; padding: 10px 0; }
+  .roster-row + .roster-row { border-top: 1px solid var(--hairline); }
+  .roster-row .who { flex: 1; min-width: 0; }
+  .roster-row .who b { font-family: var(--serif); font-size: 15px; font-weight: 600; display: block; line-height: 1.4; }
+  .roster-row .who span { font-size: 12px; color: var(--faint); }
+  .roster-row .tag { font-size: 12px; color: var(--muted); flex: none; }
+  .examples { width: 100%; display: flex; flex-direction: column; gap: 8px; }
+  .example {
+    display: flex; align-items: center; gap: 12px; text-align: left;
+    padding: 12px 14px; border: 1px solid var(--hairline); border-radius: 12px;
+    background: transparent; font-size: 13px; color: var(--ink-2); cursor: pointer;
+    transition: background var(--dur-2) var(--ease), transform var(--dur-1) var(--ease);
+  }
+  .example::before { content: ""; width: 3px; height: 16px; border-radius: 2px; background: var(--accent); flex: none; }
+  .example:hover { background: var(--paper-raised); }
+  .example:active { transform: scale(.98); }
+
+  /* ── 消息流 ─────────────────────────────────────────────── */
+  .stream { flex: 1; padding: 20px 16px 24px; display: flex; flex-direction: column; gap: 24px; }
+
+  .bubble-user {
+    align-self: flex-end; max-width: 82%;
+    background: oklch(91.5% 0.010 75);
+    color: var(--ink);
+    border-radius: 18px; border-bottom-right-radius: 4px;
+    padding: 10px 14px; font-size: 15px; line-height: 1.7;
+  }
+
+  /* 立场一览（记忆点） */
+  .stance-strip {
+    display: flex; align-items: center; gap: 10px;
+    padding: 2px 2px 0;
+  }
+  .stance-strip .dots { display: flex; gap: 5px; }
+  .stance-strip .dot { width: 8px; height: 8px; border-radius: 50%; }
+  .stance-strip .txt { font-size: 12px; color: var(--muted); letter-spacing: .02em; }
+  .stance-strip .rule { flex: 1; height: 1px; background: var(--hairline); }
+  .stance-strip.pending .txt { color: var(--faint); }
+
+  /* 顾问卡 */
+  .advisor { display: flex; gap: 12px; align-items: flex-start; }
+  .avatar {
+    width: 36px; height: 36px; border-radius: 50%; flex: none; margin-top: 2px;
+    display: flex; align-items: center; justify-content: center;
+    color: oklch(98% 0.005 85); font-size: 15px; font-weight: 700;
+  }
+  .advisor .body { flex: 1; min-width: 0; }
+
+  .namerow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+  .namerow .cn { font-family: var(--serif); font-size: 15px; font-weight: 600; }
+  .namerow .en { font-size: 12px; color: var(--faint); }
+  .pulse { width: 6px; height: 6px; border-radius: 50%; animation: pulse 1.2s var(--ease) infinite; }
+  @keyframes pulse { 0%,100% { opacity: .3; } 50% { opacity: 1; } }
+
+  .pill {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 12px; font-weight: 600; padding: 2px 10px 2px 8px; border-radius: 999px;
+  }
+  .pill .dot { width: 6px; height: 6px; border-radius: 50%; }
+
+  .judgment {
+    font-family: var(--serif); font-size: 17px; font-weight: 600;
+    line-height: 1.65; color: var(--ink); margin-bottom: 10px;
+  }
+  .reasoning { font-size: 15px; line-height: 1.75; color: var(--ink-2); margin-bottom: 12px; }
+
+  .callout {
+    border-radius: 10px; padding: 10px 14px;
+    border-left: 2px solid var(--c, var(--accent));
+    background: color-mix(in oklch, var(--c, var(--accent)) 6%, var(--paper));
+    margin-bottom: 12px;
+  }
+  .callout .label { font-size: 12px; font-weight: 700; color: var(--c, var(--accent)); margin-bottom: 2px; letter-spacing: .04em; }
+  .callout .text { font-size: 14px; line-height: 1.7; color: var(--ink); }
+
+  .more-btn {
+    font-size: 13px; font-weight: 600; border: none; background: none;
+    cursor: pointer; padding: 4px 0; color: var(--c, var(--accent));
+  }
+  .details { border-top: 1px solid var(--hairline); padding-top: 12px; margin-top: 10px; display: flex; flex-direction: column; gap: 12px; }
+  .detail .dtag {
+    display: inline-block; font-size: 12px; font-weight: 600; color: var(--muted);
+    background: oklch(94.5% 0.008 80); border-radius: 4px; padding: 1px 6px; margin-bottom: 4px;
+  }
+  .detail .dtext { font-size: 14px; line-height: 1.7; color: var(--ink-2); }
+  .detail.muted .dtext { color: var(--muted); font-style: italic; }
+
+  .ghost-btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 13px; font-weight: 600; border-radius: 999px; cursor: pointer;
+    padding: 7px 14px; border: none;
+    background: color-mix(in oklch, var(--c, var(--accent)) 8%, var(--paper));
+    color: var(--c, var(--accent));
+    transition: opacity var(--dur-2) var(--ease), transform var(--dur-1) var(--ease);
+  }
+  .ghost-btn:hover { opacity: .8; }
+  .ghost-btn:active { transform: scale(.97); }
+
+  .thinking-dots { display: flex; gap: 6px; padding: 8px 0; }
+  .thinking-dots i {
+    width: 7px; height: 7px; border-radius: 50%;
+    animation: pulse 1.2s var(--ease) infinite;
+  }
+  .thinking-dots i:nth-child(2) { animation-delay: .15s; }
+  .thinking-dots i:nth-child(3) { animation-delay: .3s; }
+  .skeleton { display: flex; flex-direction: column; gap: 8px; }
+  .skeleton i {
+    height: 12px; border-radius: 6px;
+    background: linear-gradient(90deg, oklch(93% 0.008 80), oklch(95.5% 0.008 82), oklch(93% 0.008 80));
+    background-size: 200% 100%; animation: shimmer 1.6s linear infinite;
+  }
+  @keyframes shimmer { to { background-position: -200% 0; } }
+
+  .errbox {
+    display: flex; gap: 8px; align-items: flex-start;
+    background: color-mix(in oklch, var(--stance-no) 8%, var(--paper));
+    border-radius: 10px; padding: 10px 12px; margin-bottom: 8px;
+  }
+  .errbox .warn { color: var(--stance-no); font-size: 14px; line-height: 1.5; }
+  .errbox b { color: var(--stance-no); font-size: 14px; display: block; }
+  .errbox span { font-size: 13px; color: oklch(48% 0.06 28); }
+  .retry-btn {
+    display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600;
+    color: var(--muted); background: none; border: 1px solid var(--hairline);
+    border-radius: 999px; padding: 6px 14px; cursor: pointer;
+    transition: background var(--dur-2) var(--ease);
+  }
+  .retry-btn:hover { background: var(--paper-raised); color: var(--ink-2); }
+
+  .panel-actions { display: flex; justify-content: center; gap: 12px; padding-top: 4px; }
+  .panel-actions .plain {
+    font-size: 13px; color: var(--faint); background: none; border: none; cursor: pointer;
+    padding: 7px 12px; border-radius: 999px; transition: all var(--dur-2) var(--ease);
+  }
+  .panel-actions .plain:hover { color: var(--muted); background: var(--paper-raised); }
+  .panel-actions .debate {
+    font-size: 13px; font-weight: 600; color: var(--accent); background: none;
+    border: 1px solid color-mix(in oklch, var(--accent) 30%, var(--paper));
+    border-radius: 999px; padding: 7px 14px; cursor: pointer;
+    transition: background var(--dur-2) var(--ease);
+  }
+  .panel-actions .debate:hover { background: var(--accent-soft); }
+
+  /* ── 输入条 ─────────────────────────────────────────────── */
+  .inputbar { padding: 8px 12px 14px; background: var(--paper); }
+  .followup-chip {
+    display: inline-flex; align-items: center; gap: 6px; margin: 0 4px 8px;
+    font-size: 12px; font-weight: 600; border-radius: 999px; padding: 4px 12px;
+    background: color-mix(in oklch, var(--jobs) 8%, var(--paper));
+    color: var(--jobs);
+    border: 1px solid color-mix(in oklch, var(--jobs) 25%, var(--paper));
+  }
+  .followup-chip .x { opacity: .6; cursor: pointer; }
+  .inputcard {
+    background: var(--paper-raised); border: 1px solid var(--hairline);
+    border-radius: 18px; box-shadow: 0 4px 16px -8px oklch(30% 0.02 70 / .12);
+  }
+  .inputcard.focused { border-color: color-mix(in oklch, var(--buffett) 35%, var(--paper)); }
+  .inputrow { display: flex; align-items: flex-end; gap: 10px; padding: 12px 14px 6px; }
+  .inputrow .field { flex: 1; font-size: 15px; color: var(--faint); line-height: 1.6; }
+  .inputrow .field.typing { color: var(--ink); }
+  .send {
+    width: 32px; height: 32px; border-radius: 50%; flex: none; border: none; cursor: pointer;
+    background: var(--accent); color: oklch(98% 0.005 85);
+    display: flex; align-items: center; justify-content: center;
+    transition: transform var(--dur-1) var(--ease), opacity var(--dur-2) var(--ease);
+  }
+  .send:active { transform: scale(.94); }
+  .toolrow { display: flex; align-items: center; gap: 8px; padding: 4px 12px 10px; }
+  .model-chip {
+    display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--muted);
+    border: 1px solid var(--hairline); border-radius: 999px; padding: 3px 10px;
+    background: none; cursor: pointer;
+  }
+  .toolrow .spacer { flex: 1; }
+
+  /* ── 令牌面板 ────────────────────────────────────────────── */
+  .tokens {
+    width: 320px; flex: none; background: var(--paper);
+    border: 1px solid var(--hairline); border-radius: 20px;
+    padding: 24px; display: flex; flex-direction: column; gap: 22px;
+  }
+  .tokens h3 {
+    font-family: var(--serif); font-size: 17px; font-weight: 700; margin-bottom: 2px;
+  }
+  .tokens .sec-label {
+    font-size: 12px; font-weight: 700; color: var(--faint);
+    letter-spacing: .1em; margin-bottom: 10px;
+  }
+  .swatches { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .swatch { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+  .swatch i {
+    width: 28px; height: 28px; border-radius: 8px; flex: none;
+    border: 1px solid var(--hairline);
+  }
+  .typescale > div { border-top: 1px solid var(--hairline); padding: 8px 0; }
+  .typescale > div:first-child { border-top: none; }
+  .typescale .meta { font-size: 11px; color: var(--faint); }
+  .spacebar { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+  .spacebar i { height: 10px; background: var(--accent-soft); border: 1px solid color-mix(in oklch, var(--accent) 25%, var(--paper)); border-radius: 3px; }
+  .motion-list { font-size: 12px; color: var(--muted); display: flex; flex-direction: column; gap: 4px; }
+  .motion-list code { font-size: 11px; color: var(--ink-2); }
+
+  .board-foot {
+    max-width: 1280px; margin: 40px auto 0; text-align: center;
+    font-size: 12px; color: var(--faint);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+  }
+</style>
+</head>
+<body>
+
+<header class="board-head">
+  <div class="kicker">UI DESIGN · 移动优先 PWA</div>
+  <h1>纸上顾问团</h1>
+  <p>多 Agent 对话应用「顾问团」界面设计稿 · 暖米纸质风 · 设计规格见 docs/DESIGN.md</p>
+</header>
+
+<div class="board">
+
+  <!-- ═══════════ 屏 1 · 空状态 ═══════════ -->
+  <div class="frame-col">
+    <div class="phone">
+      <div class="screen">
+        <div class="topbar">
+          <button class="iconbtn" aria-label="菜单">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+          </button>
+          <div class="title">新的对话</div>
+          <button class="iconbtn" aria-label="更多">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>
+          </button>
+        </div>
+
+        <div class="empty">
+          <h2>把一个问题，<br>交给四位顾问</h2>
+          <p class="sub">他们会用各自的思维方式，给出立场鲜明的判断</p>
+
+          <div class="roster">
+            <div class="roster-row">
+              <span class="avatar" style="background:var(--jobs)">◉</span>
+              <div class="who"><b>乔布斯</b><span>Steve Jobs</span></div>
+              <span class="tag">极致简洁，追随热爱</span>
+            </div>
+            <div class="roster-row">
+              <span class="avatar" style="background:var(--musk)">⚡</span>
+              <div class="who"><b>马斯克</b><span>Elon Musk</span></div>
+              <span class="tag">第一性原理，10倍思维</span>
+            </div>
+            <div class="roster-row">
+              <span class="avatar" style="background:var(--buffett)">◈</span>
+              <div class="who"><b>巴菲特</b><span>Warren Buffett</span></div>
+              <span class="tag">耐心复利，内在记分卡</span>
+            </div>
+            <div class="roster-row">
+              <span class="avatar" style="background:var(--munger)">◆</span>
+              <div class="who"><b>芒格</b><span>Charlie Munger</span></div>
+              <span class="tag">逆向思维，避免愚蠢</span>
+            </div>
+          </div>
+
+          <div class="examples">
+            <button class="example">我有个创业想法，请帮我判断一下可行性</button>
+            <button class="example">AI 时代个人应该如何把握机会？</button>
+            <button class="example">如何判断一个商业模式是否有护城河？</button>
+          </div>
+        </div>
+
+        <div class="inputbar">
+          <div class="inputcard">
+            <div class="inputrow">
+              <div class="field">向顾问团提问…</div>
+            </div>
+            <div class="toolrow">
+              <button class="model-chip">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L4.5 12.5H11L9.5 22 19 10.5h-6.5L13 2z"/></svg>
+                DeepSeek V3
+              </button>
+              <div class="spacer"></div>
+              <button class="iconbtn" style="width:28px;height:28px" aria-label="设置">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09a1.65 1.65 0 00-1-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09a1.65 1.65 0 001.51-1 1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33h.01a1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82v.01a1.65 1.65 0 001.51 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="frame-label">① 空状态 · 顾问名册</div>
+  </div>
+
+  <!-- ═══════════ 屏 2 · 对话进行中 ═══════════ -->
+  <div class="frame-col">
+    <div class="phone">
+      <div class="screen">
+        <div class="topbar">
+          <button class="iconbtn" aria-label="菜单">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+          </button>
+          <div class="title">AI 时代个人应该如何把握机会？</div>
+          <button class="iconbtn" aria-label="更多">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>
+          </button>
+        </div>
+
+        <div class="stream">
+          <div class="bubble-user">AI 时代个人应该如何把握机会？我做产品经理 5 年了，有点焦虑。</div>
+
+          <div class="stance-strip pending">
+            <div class="dots">
+              <span class="dot" style="background:var(--stance-yes)"></span>
+              <span class="dot" style="background:var(--hairline)"></span>
+              <span class="dot" style="background:var(--hairline)"></span>
+              <span class="dot" style="background:var(--hairline)"></span>
+            </div>
+            <span class="txt">立场形成中 · 1/4</span>
+            <span class="rule"></span>
+          </div>
+
+          <!-- 乔布斯 · 完成 -->
+          <div class="advisor" style="--c:var(--jobs)">
+            <span class="avatar" style="background:var(--jobs)">◉</span>
+            <div class="body">
+              <div class="namerow">
+                <span class="cn">乔布斯</span>
+                <span class="en">Steve Jobs</span>
+                <span class="pill" style="color:var(--stance-yes);background:color-mix(in oklch, var(--stance-yes) 9%, var(--paper))">
+                  <span class="dot" style="background:var(--stance-yes)"></span>支持
+                </span>
+              </div>
+              <p class="judgment">焦虑是因为你在用旧地图找新大陆。AI 不是来抢你饭碗的，它是来放大有品味的人的。</p>
+              <p class="reasoning">每一次技术革命淘汰的都不是人，而是平庸的工作方式。你做了 5 年产品，真正值钱的不是画原型的手艺，是你对用户痛点的判断力。AI 把执行成本打到零，判断力的溢价就会到无穷大。</p>
+              <div class="callout">
+                <div class="label">核心批评</div>
+                <div class="text">你在问"如何把握机会"，这个问题本身就是错的。机会不是被把握的，是被创造出来的。去做一个只有你能做的产品。</div>
+              </div>
+              <button class="more-btn">展开完整判断 ▾</button>
+            </div>
+          </div>
+
+          <!-- 马斯克 · 流式中 -->
+          <div class="advisor" style="--c:var(--musk)">
+            <span class="avatar" style="background:var(--musk)">⚡</span>
+            <div class="body">
+              <div class="namerow">
+                <span class="cn">马斯克</span>
+                <span class="en">Elon Musk</span>
+                <span class="pulse" style="background:var(--musk)"></span>
+              </div>
+              <p class="judgment">回到最基本的事实：AI 把内容生产的边际成本降到了接近零。</p>
+              <p class="reasoning">所以问题不是"会不会被替代"，而是你的产出能不能乘以 10。产品经理的价值链里，写文档、画原型这些环节正在坍缩……</p>
+              <div class="thinking-dots" style="padding:2px 0">
+                <i style="background:var(--musk)"></i><i style="background:var(--musk)"></i><i style="background:var(--musk)"></i>
+              </div>
+            </div>
+          </div>
+
+          <!-- 巴菲特 · 思考中 -->
+          <div class="advisor" style="--c:var(--buffett)">
+            <span class="avatar" style="background:var(--buffett)">◈</span>
+            <div class="body">
+              <div class="namerow">
+                <span class="cn">巴菲特</span>
+                <span class="en">Warren Buffett</span>
+              </div>
+              <div class="skeleton">
+                <i style="width:82%"></i>
+                <i style="width:64%"></i>
+              </div>
+            </div>
+          </div>
+
+          <!-- 芒格 · 排队思考 -->
+          <div class="advisor" style="--c:var(--munger)">
+            <span class="avatar" style="background:var(--munger)">◆</span>
+            <div class="body">
+              <div class="namerow">
+                <span class="cn">芒格</span>
+                <span class="en">Charlie Munger</span>
+              </div>
+              <div class="thinking-dots">
+                <i style="background:var(--munger)"></i><i style="background:var(--munger)"></i><i style="background:var(--munger)"></i>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="inputbar">
+          <div class="inputcard">
+            <div class="inputrow">
+              <div class="field">顾问正在回答…</div>
+              <button class="send stop" aria-label="停止">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="2.5"/></svg>
+              </button>
+            </div>
+            <div class="toolrow">
+              <button class="model-chip">DeepSeek V3</button>
+              <div class="spacer"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="frame-label">② 对话进行中 · 流式渲染</div>
+  </div>
+
+  <!-- ═══════════ 屏 3 · 完成 + 追问 ═══════════ -->
+  <div class="frame-col">
+    <div class="phone">
+      <div class="screen">
+        <div class="topbar">
+          <button class="iconbtn" aria-label="菜单">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+          </button>
+          <div class="title">AI 时代个人应该如何把握机会？</div>
+          <button class="iconbtn" aria-label="更多">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>
+          </button>
+        </div>
+
+        <div class="stream">
+          <div class="stance-strip">
+            <div class="dots">
+              <span class="dot" style="background:var(--stance-yes)"></span>
+              <span class="dot" style="background:var(--stance-yes)"></span>
+              <span class="dot" style="background:var(--stance-no)"></span>
+              <span class="dot" style="background:var(--stance-tbd)"></span>
+            </div>
+            <span class="txt">2 支持 · 1 反对 · 1 待定</span>
+            <span class="rule"></span>
+          </div>
+
+          <!-- 巴菲特 · 完成 + 展开 -->
+          <div class="advisor" style="--c:var(--buffett)">
+            <span class="avatar" style="background:var(--buffett);box-shadow:0 0 0 3px color-mix(in oklch, var(--buffett) 30%, transparent)">◈</span>
+            <div class="body">
+              <div class="namerow">
+                <span class="cn">巴菲特</span>
+                <span class="en">Warren Buffett</span>
+                <span class="pill" style="color:var(--stance-cond);background:color-mix(in oklch, var(--stance-cond) 10%, var(--paper))">
+                  <span class="dot" style="background:var(--stance-cond)"></span>有条件支持
+                </span>
+              </div>
+              <p class="judgment">在你懂的领域里用上 AI，是复利；在你不懂的领域里追 AI，是投机。</p>
+              <p class="reasoning">我见过太多人追风口追得精疲力尽。你的能力圈是产品判断，把 AI 当成让你判断力复利的杠杆，而不是逼自己变成算法工程师。十年后回头看，慢就是快。</p>
+              <div class="details">
+                <div class="detail">
+                  <span class="dtag">关注焦点</span>
+                  <div class="dtext">能力圈与 AI 工具的交集：你最懂的领域里，哪些环节可以被放大 10 倍。</div>
+                </div>
+                <div class="detail">
+                  <span class="dtag">要求改变</span>
+                  <div class="dtext">停止追逐每一个新工具，选定一个场景深耕三个月。</div>
+                </div>
+                <div class="detail muted">
+                  <span class="dtag">他的盲点</span>
+                  <div class="dtext">对技术范式转移的判断系统性滞后，框架依赖历史数据。</div>
+                </div>
+                <button class="more-btn" style="color:var(--faint)">收起 ▴</button>
+              </div>
+              <div style="margin-top:12px">
+                <button class="ghost-btn">↗ 追问巴菲特</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 芒格 · 失败 -->
+          <div class="advisor" style="--c:var(--munger)">
+            <span class="avatar" style="background:var(--munger)">◆</span>
+            <div class="body">
+              <div class="namerow">
+                <span class="cn">芒格</span>
+                <span class="en">Charlie Munger</span>
+              </div>
+              <div class="errbox">
+                <span class="warn">⚠</span>
+                <div>
+                  <b>获取失败</b>
+                  <span>模型限流，请稍后重试（rate limit 429）</span>
+                </div>
+              </div>
+              <button class="retry-btn">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4v5h.6m15.3 2A8 8 0 004.6 9m0 0H9m11 11v-5h-.6m0 0a8 8 0 01-15.3-2m15.3 2H15"/></svg>
+                重试
+              </button>
+            </div>
+          </div>
+
+          <div class="panel-actions">
+            <button class="plain">重新生成</button>
+            <button class="debate">深入辩论</button>
+          </div>
+        </div>
+
+        <div class="inputbar">
+          <span class="followup-chip" style="background:color-mix(in oklch, var(--buffett) 8%, var(--paper));color:var(--buffett);border-color:color-mix(in oklch, var(--buffett) 25%, var(--paper))">◈ 追问 巴菲特 <span class="x">✕</span></span>
+          <div class="inputcard focused">
+            <div class="inputrow">
+              <div class="field typing">如果只深耕一个场景，你建议从哪个开始？</div>
+              <button class="send" aria-label="发送" style="background:var(--buffett)">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+              </button>
+            </div>
+            <div class="toolrow">
+              <button class="model-chip">DeepSeek V3</button>
+              <div class="spacer"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="frame-label">③ 全部完成 · 追问模式</div>
+  </div>
+
+  <!-- ═══════════ 令牌面板 ═══════════ -->
+  <aside class="tokens">
+    <div>
+      <h3>设计令牌</h3>
+      <p style="font-size:12px;color:var(--faint)">可直接映射为 Tailwind 配置</p>
+    </div>
+
+    <section>
+      <div class="sec-label">纸面与墨色</div>
+      <div class="swatches">
+        <div class="swatch"><i style="background:var(--paper)"></i>paper</div>
+        <div class="swatch"><i style="background:var(--paper-raised)"></i>raised</div>
+        <div class="swatch"><i style="background:var(--ink)"></i>ink</div>
+        <div class="swatch"><i style="background:var(--ink-2)"></i>ink-2</div>
+        <div class="swatch"><i style="background:var(--muted)"></i>muted</div>
+        <div class="swatch"><i style="background:var(--hairline)"></i>hairline</div>
+        <div class="swatch"><i style="background:var(--accent)"></i>accent 朱砂</div>
+        <div class="swatch"><i style="background:var(--accent-soft)"></i>accent-soft</div>
+      </div>
+    </section>
+
+    <section>
+      <div class="sec-label">顾问身份色</div>
+      <div class="swatches">
+        <div class="swatch"><i style="background:var(--jobs)"></i>乔布斯</div>
+        <div class="swatch"><i style="background:var(--musk)"></i>马斯克</div>
+        <div class="swatch"><i style="background:var(--buffett)"></i>巴菲特</div>
+        <div class="swatch"><i style="background:var(--munger)"></i>芒格</div>
+      </div>
+    </section>
+
+    <section>
+      <div class="sec-label">立场语义（色点 + 文字双编码）</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <span class="pill" style="color:var(--stance-yes);background:color-mix(in oklch, var(--stance-yes) 9%, var(--paper))"><span class="dot" style="background:var(--stance-yes)"></span>支持</span>
+        <span class="pill" style="color:var(--stance-no);background:color-mix(in oklch, var(--stance-no) 8%, var(--paper))"><span class="dot" style="background:var(--stance-no)"></span>反对</span>
+        <span class="pill" style="color:var(--stance-cond);background:color-mix(in oklch, var(--stance-cond) 10%, var(--paper))"><span class="dot" style="background:var(--stance-cond)"></span>有条件支持</span>
+        <span class="pill" style="color:var(--stance-tbd);background:color-mix(in oklch, var(--stance-tbd) 8%, var(--paper))"><span class="dot" style="background:var(--stance-tbd)"></span>待定</span>
+      </div>
+    </section>
+
+    <section>
+      <div class="sec-label">字级（五级标尺）</div>
+      <div class="typescale">
+        <div><span style="font-family:var(--serif);font-size:22px;font-weight:700;line-height:1.4">把问题交给顾问</span><div class="meta">22 · serif 700 · 大标题</div></div>
+        <div><span style="font-family:var(--serif);font-size:17px;font-weight:600;line-height:1.5">核心判断用衬线陈述</span><div class="meta">17 · serif 600 · 核心判断</div></div>
+        <div><span style="font-size:15px;line-height:1.75">正文推理段落，中文行高 1.75，适合长文阅读。</span><div class="meta">15 · sans 400 · 正文</div></div>
+        <div><span style="font-size:13px;color:var(--muted)">辅助说明与按钮文案</span><div class="meta">13 · sans · 辅助</div></div>
+        <div><span style="font-size:12px;color:var(--faint);letter-spacing:.06em">标签 · 元信息 · 英文名</span><div class="meta">12 · sans · 标签</div></div>
+      </div>
+    </section>
+
+    <section>
+      <div class="sec-label">间距（4pt 标尺）</div>
+      <div class="spacebar"><i style="width:4px"></i>4</div>
+      <div class="spacebar"><i style="width:8px"></i>8</div>
+      <div class="spacebar"><i style="width:12px"></i>12</div>
+      <div class="spacebar"><i style="width:16px"></i>16</div>
+      <div class="spacebar"><i style="width:24px"></i>24 · 卡片间距</div>
+      <div class="spacebar"><i style="width:32px"></i>32</div>
+    </section>
+
+    <section>
+      <div class="sec-label">动效</div>
+      <div class="motion-list">
+        <div>按压反馈 <code>120ms</code></div>
+        <div>hover / chip <code>240ms</code></div>
+        <div>卡片入场 · 抽屉 <code>400ms</code></div>
+        <div>缓动 <code>cubic-bezier(0.25, 1, 0.5, 1)</code></div>
+        <div>顾问卡 stagger <code>80ms 依次</code></div>
+        <div>reduced-motion <code>仅 200ms 淡入</code></div>
+      </div>
+    </section>
+  </aside>
+
+</div>
+
+<footer class="board-foot">
+  纸上顾问团 · 设计规格见 docs/DESIGN.md · 本页为静态预览，全部样式使用设计令牌，可直接映射至 Tailwind
+</footer>
+
+</body>
+</html>

@@ -25,5 +25,13 @@ Thumbs.db
 .vscode/
 .idea/
 
-# Misc
-$null
+# Local agent and browser automation state
+/.playwright-cli/
+/.superpowers/
+/.trae/
+
+# Local model probes and generated artifacts may contain prompts, responses, or logs
+/output/
+
+# Superseded local preview; the canonical design preview is design/preview.html
+/design-preview.html
