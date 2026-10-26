@@ -4,12 +4,16 @@ import { useState, useCallback, useRef, useEffect } from 'react'
 import { v4 as uuidv4 } from 'uuid'
 import type {
   Message, Thread, PanelResult, StreamEvent, AdvisorId,
-  AdvisorJudgment, PriorTurn, PreviousJudgment,
-  FollowUpMeta, AppSettings,
+  AdvisorJudgment, PriorTurn,
+  FollowUpMeta, AppSettings, ResearchResult,
 } from './types'
-import { resolveProvider } from './storage'
+import { resolveModelTarget } from './modelSelection'
+import { buildConversationContext, buildPreviousJudgments } from './conversation'
+import { getPartialJudgment, interruptAdvisor, normalizeJudgment } from './judgment'
 import type { AdvisorMeta } from './advisors'
 import { makeInitialPanel } from './useThreads'
+import { getPanelAdvisors } from './discussionPresentation'
+import { PROMPT_VERSION } from './advisorPrompt'
 
 // ─── 常量 ─────────────────────────────────────────────────────────────────────
 
@@ -33,13 +37,16 @@ async function runWithConcurrency<T>(
   tasks: (() => Promise<T>)[],
   concurrency: number,
   staggerMs = 0,
+  signal?: AbortSignal,
 ): Promise<T[]> {
   const results: T[] = new Array(tasks.length)
   const running = new Set<Promise<void>>()
 
   for (let i = 0; i < tasks.length; i++) {
+    if (signal?.aborted) break
     // 等待间隔（第一个不等）
     if (staggerMs > 0 && i > 0) await sleep(staggerMs)
+    if (signal?.aborted) break
 
     // 如果达到并发上限，等一个完成
     if (running.size >= concurrency) {
@@ -78,26 +85,12 @@ export function buildPriorTurn(messages: Message[], advisorId: AdvisorId): Prior
   return null
 }
 
-/** 收集所有面板中的最新判断（后出的覆盖先出的） */
-export function buildPreviousJudgments(messages: Message[]): PreviousJudgment[] {
-  const merged: Record<string, AdvisorJudgment> = {}
-  for (const msg of messages) {
-    if (msg.role === 'panel' && msg.panel) {
-      for (const [id, j] of Object.entries(msg.panel.judgments)) {
-        if (j) merged[id] = j
-      }
-    }
-  }
-  return Object.entries(merged)
-    .map(([id, j]) => ({ advisorId: id as AdvisorId, judgment: j }))
-}
-
 // ─── SSE 读取工具 ─────────────────────────────────────────────────────────────
 
 interface SSEReaderCallbacks {
   onAdvisorStart?: () => void
   onAdvisorToken?: (token: string) => void
-  onAdvisorComplete?: (judgment: AdvisorJudgment | null, error?: string) => void
+  onAdvisorComplete?: (judgment: AdvisorJudgment | null, error?: string, status?: StreamEvent['status']) => void
   onError?: (error: string) => void
 }
 
@@ -143,7 +136,7 @@ async function readSSEStream(
           case 'advisor_start':   callbacks.onAdvisorStart?.(); break
           case 'advisor_token':   if (evt.token) callbacks.onAdvisorToken?.(evt.token); break
           case 'advisor_complete':
-            callbacks.onAdvisorComplete?.(evt.judgment as AdvisorJudgment | null, evt.error as string | undefined)
+            callbacks.onAdvisorComplete?.(evt.judgment as AdvisorJudgment | null, evt.error, evt.status)
             completed = true; break
           case 'error':
             callbacks.onError?.(evt.error ?? 'Unknown error')
@@ -182,6 +175,12 @@ export function useStreaming(
   const tokenBuffer = useRef<TokenBuffer>({ advisorTokens: {} })
   const rafRef = useRef<number | null>(null)
 
+  useEffect(() => () => {
+    for (const controller of abortControllersRef.current.values()) controller.abort()
+    abortControllersRef.current.clear()
+    if (rafRef.current !== null) cancelAnimationFrame(rafRef.current)
+  }, [])
+
   useEffect(() => { isStreamingRef.current = isStreaming }, [isStreaming, isStreamingRef])
 
   // ── RAF flush ─────────────────────────────────────────────────────────────
@@ -216,22 +215,17 @@ export function useStreaming(
   // ── 停止所有请求 ──────────────────────────────────────────────────────────
 
   const handleStop = useCallback(() => {
-    // 清掉未 flush 的缓冲 token，避免残留到下一次请求
-    tokenBuffer.current.advisorTokens = {}
+    flushTokens()
     for (const [, ctrl] of abortControllersRef.current) ctrl.abort()
     abortControllersRef.current.clear()
     if (currentPanelRef.current) {
       const { tid, msgId } = currentPanelRef.current
-      updatePanel(tid, msgId, p => ({
-        ...p,
-        advisorStatus: Object.fromEntries(
-          Object.entries(p.advisorStatus).map(([id, s]) =>
-            [id, s === 'thinking' ? 'idle' : s]
-          )
-        ) as Record<string, import('./types').AdvisorStatus>,
-      }))
+      updatePanel(tid, msgId, p => Object.entries(p.advisorStatus).reduce(
+        (panel, [id, status]) => status === 'thinking' || status === 'queued' ? interruptAdvisor(panel, id, '已停止生成', true) : panel,
+        p,
+      ))
     }
-  }, [updatePanel])
+  }, [updatePanel, flushTokens])
 
   const handleFollowUp = useCallback((advisorId: AdvisorId) => {
     setTargetAdvisor(advisorId)
@@ -240,11 +234,13 @@ export function useStreaming(
   // ── API 公共参数 ──────────────────────────────────────────────────────────
 
   function makeApiBase(settings: AppSettings, selectedModel: string) {
-    const provider = resolveProvider(settings, selectedModel)
+    const target = resolveModelTarget(settings, selectedModel)
+    if (!target) throw new Error('所选模型已失效，请重新选择服务商和模型。')
+    const provider = target.provider
     return {
-      model: selectedModel,
-      clientApiKey: provider?.apiKey || settings.apiKey || undefined,
-      clientBaseUrl: provider?.baseUrl || settings.baseUrl || undefined,
+      model: target.model,
+      clientApiKey: provider ? provider.apiKey || undefined : settings.apiKey || undefined,
+      clientBaseUrl: provider ? provider.baseUrl || undefined : settings.baseUrl || undefined,
       // 高级参数：传给服务端路由（undefined 时由服务端用默认值处理）
       temperature: settings.temperature ?? 'auto',
       maxTokensCap: settings.maxTokensCap,
@@ -265,11 +261,11 @@ export function useStreaming(
 
     for (let attempt = 0; attempt <= CLIENT_RETRY_MAX; attempt++) {
       if (globalAbort.aborted) return null
+      updatePanel(tid, panelMsgId, p => ({ ...p, advisorStatus: { ...p.advisorStatus, [advisorId]: 'thinking' } }))
       if (attempt > 0) {
         updatePanel(tid, panelMsgId, p => ({
           ...p,
           advisorStatus: { ...p.advisorStatus, [advisorId]: 'thinking' },
-          streamingTexts: { ...p.streamingTexts, [advisorId]: '' },
         }))
         await sleep(RETRY_BASE_DELAY * attempt)
       }
@@ -295,14 +291,10 @@ export function useStreaming(
         if (!res.ok) {
           const errText = await res.text().catch(() => '')
           globalAbort.removeEventListener('abort', onGlobalAbort)
-          if (attempt === CLIENT_RETRY_MAX) {
+          if (attempt === CLIENT_RETRY_MAX || (res.status < 500 && res.status !== 429)) {
             let detail = `HTTP ${res.status}`
             try { detail = JSON.parse(errText).error || detail } catch {}
-            updatePanel(tid, panelMsgId, p => ({
-              ...p,
-              advisorStatus: { ...p.advisorStatus, [advisorId]: 'error' },
-              advisorErrors: { ...p.advisorErrors, [advisorId]: detail },
-            }))
+            updatePanel(tid, panelMsgId, p => interruptAdvisor(p, advisorId, detail))
             return null
           }
           continue
@@ -314,59 +306,54 @@ export function useStreaming(
           onAdvisorStart: () => {
             // 服务端每次重试都会重发 advisor_start。不清掉上一次尝试已经显示出来的
             // 半截输出，两次内容会直接叠在一起。
-            delete tokenBuffer.current.advisorTokens[advisorId]
-            updatePanel(tid, panelMsgId, p => ({
+            flushTokens()
+            updatePanel(tid, panelMsgId, p => {
+              const previous = getPartialJudgment(p.streamingTexts[advisorId], advisor.name)
+              return {
               ...p,
+              judgments: previous ? { ...p.judgments, [advisorId]: previous } : p.judgments,
               advisorStatus: { ...p.advisorStatus, [advisorId]: 'thinking' },
               streamingTexts: { ...p.streamingTexts, [advisorId]: '' },
-            }))
+            }})
           },
           onAdvisorToken: (token) => {
             tokenBuffer.current.advisorTokens[advisorId] =
               (tokenBuffer.current.advisorTokens[advisorId] ?? '') + token
             scheduleFlush()
           },
-          onAdvisorComplete: (judgment, errMsg) => {
+          onAdvisorComplete: (judgment, errMsg, status) => {
             flushTokens()
-            result = judgment
-            updatePanel(tid, panelMsgId, p => ({
+            if (globalAbort.aborted) return
+            const complete = !errMsg && status !== 'partial' && status !== 'error' ? normalizeJudgment(judgment, advisor.name) : null
+            result = complete ?? normalizeJudgment(judgment, advisor.name, true)
+            updatePanel(tid, panelMsgId, p => result ? {
               ...p,
-              advisorStatus: { ...p.advisorStatus, [advisorId]: judgment ? 'done' : 'error' },
-              judgments: judgment ? { ...p.judgments, [advisorId]: judgment } : p.judgments,
-              advisorErrors: !judgment
-                ? { ...p.advisorErrors, [advisorId]: errMsg || '服务端未返回有效判断' }
-                : p.advisorErrors,
-            }))
+              advisorStatus: { ...p.advisorStatus, [advisorId]: complete ? 'done' : 'partial' },
+              judgments: { ...p.judgments, [advisorId]: result! },
+              advisorErrors: { ...p.advisorErrors, [advisorId]: complete ? undefined : errMsg || '回答尚未完整生成' },
+            } : interruptAdvisor(p, advisorId, errMsg || '服务端未返回完整判断'))
           },
           onError: (errMsg) => {
-            updatePanel(tid, panelMsgId, p => ({
-              ...p,
-              advisorStatus: { ...p.advisorStatus, [advisorId]: 'error' },
-              advisorErrors: { ...p.advisorErrors, [advisorId]: errMsg },
-            }))
+            flushTokens()
+            if (!globalAbort.aborted) updatePanel(tid, panelMsgId, p => interruptAdvisor(p, advisorId, errMsg))
           },
         }, perAbort.signal)
 
         globalAbort.removeEventListener('abort', onGlobalAbort)
+        if (globalAbort.aborted) return null
         if (completed) return result
 
         if (attempt === CLIENT_RETRY_MAX) {
-          updatePanel(tid, panelMsgId, p => ({
-            ...p,
-            advisorStatus: { ...p.advisorStatus, [advisorId]: 'error' },
-            advisorErrors: { ...p.advisorErrors, [advisorId]: '连接中断（健康超时）' },
-          }))
+          flushTokens()
+          updatePanel(tid, panelMsgId, p => interruptAdvisor(p, advisorId, '连接中断，已保留可读内容'))
           return null
         }
       } catch (err) {
         globalAbort.removeEventListener('abort', onGlobalAbort)
         if (globalAbort.aborted) return null
         if (attempt === CLIENT_RETRY_MAX) {
-          updatePanel(tid, panelMsgId, p => ({
-            ...p,
-            advisorStatus: { ...p.advisorStatus, [advisorId]: 'error' },
-            advisorErrors: { ...p.advisorErrors, [advisorId]: err instanceof Error ? err.message : '网络错误' },
-          }))
+          flushTokens()
+          updatePanel(tid, panelMsgId, p => interruptAdvisor(p, advisorId, err instanceof Error ? err.message : '网络错误'))
           return null
         }
       }
@@ -388,21 +375,25 @@ export function useStreaming(
   ) => {
     // 与主请求/其他重试串行，避免踩踏共享的 currentPanelRef
     if (isStreaming) return
-    const advisor = activeAdvisors.find(a => a.id === advisorId)
-    if (!advisor) return
+    const targetMessage = messages.find(m => m.id === panelMsgId)
+    if (!targetMessage?.panel) return
+    const advisor = getPanelAdvisors(targetMessage.panel, activeAdvisors).find(a => a.id === advisorId)
+    if (!advisor?.profile) { setError('这位历史顾问没有可用档案，请先在设置中恢复配置。'); return }
 
-    const apiBase = makeApiBase(settings, selectedModel)
-    const customProfile = settings.customProfiles[advisorId as keyof typeof settings.customProfiles]
+    let apiBase: ReturnType<typeof makeApiBase>
+    try { apiBase = makeApiBase(settings, selectedModel) } catch (error) { setError((error as Error).message); return }
+    const customProfile = !targetMessage?.panel?.participants ? settings.customProfiles[advisorId as keyof typeof settings.customProfiles] : undefined
     const advisorWithProfile = customProfile ? { ...advisor, profile: customProfile } : advisor
 
-    const priorTurn = buildPriorTurn(messages, advisorId)
-    const previousJudgments = buildPreviousJudgments(messages)
+    const earlierMessages = messages.slice(0, messages.findIndex(m => m.id === panelMsgId))
+    const previousJudgments = buildPreviousJudgments(earlierMessages)
     const isFollowUp = messages.find(m => m.id === panelMsgId)?.followUpMeta?.isFollowUp === true
 
     updatePanel(threadId, panelMsgId, p => ({
       ...p,
+      model: { model: apiBase.model, providerId: resolveModelTarget(settings, selectedModel)?.providerId },
+      promptVersion: PROMPT_VERSION,
       advisorStatus: { ...p.advisorStatus, [advisorId]: 'thinking' },
-      streamingTexts: { ...p.streamingTexts, [advisorId]: '' },
     }))
 
     // 重试期间纳入流式管控：禁用输入/新提交，并提供停止按钮
@@ -417,8 +408,9 @@ export function useStreaming(
         advisorWithProfile,
         {
           ...apiBase, task, isFollowUp,
-          ...(previousJudgments.length > 0 ? { previousJudgments } : {}),
-          ...(priorTurn ? { priorTurn } : {}),
+          context: buildConversationContext(earlierMessages.filter(m => m.id !== earlierMessages.at(-1)?.id), advisorId),
+          ...(isFollowUp && previousJudgments.length > 0 ? { previousJudgments } : {}),
+          ...(targetMessage?.panel?.research ? { research: targetMessage.panel.research } : {}),
         },
         threadId, panelMsgId, globalAbort.signal,
       )
@@ -449,8 +441,10 @@ export function useStreaming(
     const tid = activeId
     const isFollowUp = targetAdvisor !== null
 
+    const currentMessages = threads.find(t => t.id === tid)?.messages ?? []
+    const historicalAdvisor = [...currentMessages].reverse().flatMap(m => m.panel?.participants ?? []).find(a => a.id === targetAdvisor)
     const advisorsToCall = isFollowUp
-      ? activeAdvisors.filter(a => a.id === targetAdvisor)
+      ? [historicalAdvisor ?? activeAdvisors.find(a => a.id === targetAdvisor)].filter((a): a is AdvisorMeta => Boolean(a?.profile))
       : activeAdvisors
 
     if (advisorsToCall.length === 0) {
@@ -458,13 +452,20 @@ export function useStreaming(
       return
     }
 
+    const targetModel = resolveModelTarget(settings, selectedModel)
+    if (!targetModel) { setError('请先选择可用的服务商和模型。'); return }
+    const apiBase = makeApiBase(settings, selectedModel)
+
     setError(null)
     setIsStreaming(true)
     // 清掉上一次请求可能残留的未 flush token
     tokenBuffer.current.advisorTokens = {}
 
-    const currentMessages = threads.find(t => t.id === tid)?.messages ?? []
-    const previousJudgments = buildPreviousJudgments(currentMessages)
+    const previousJudgments = isFollowUp ? buildPreviousJudgments(currentMessages) : []
+    const advisorsWithProfiles = advisorsToCall.map(a => {
+      const cp = !isFollowUp ? settings.customProfiles[a.id as keyof typeof settings.customProfiles] : undefined
+      return cp ? { ...a, profile: cp } : a
+    })
 
     const userMsg: Message = { id: uuidv4(), role: 'user', content: task }
     const panelMsgId = uuidv4()
@@ -474,7 +475,7 @@ export function useStreaming(
 
     const panelMsg: Message = {
       id: panelMsgId, role: 'panel', content: '',
-      panel: makeInitialPanel(advisorsToCall), followUpMeta,
+      panel: { ...makeInitialPanel(advisorsWithProfiles), model: { model: targetModel.model, providerId: targetModel.providerId } }, followUpMeta,
     }
 
     updateThread(tid, t => ({
@@ -486,31 +487,42 @@ export function useStreaming(
     currentPanelRef.current = { tid, msgId: panelMsgId }
     setTargetAdvisor(null)
 
-    const apiBase = makeApiBase(settings, selectedModel)
     const globalAbort = new AbortController()
     abortControllersRef.current.set('main', globalAbort)
 
     try {
-      const advisorsWithProfiles = advisorsToCall.map(a => {
-        const cp = settings.customProfiles[a.id as keyof typeof settings.customProfiles]
-        return cp ? { ...a, profile: cp } : a
-      })
+      let research: ResearchResult | undefined
+      if (settings.webSearch?.enabled) {
+        updatePanel(tid, panelMsgId, p => ({ ...p, research: { status: 'searching', sources: [] } }))
+        try {
+          const response = await fetch('/api/chat/research', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: globalAbort.signal,
+            body: JSON.stringify({ query: isFollowUp ? `${currentMessages.filter(m => m.role === 'user').at(-1)?.content ?? ''}\n${task}` : task, clientSearchApiKey: settings.webSearch.apiKey }),
+          })
+          const data = await response.json() as ResearchResult
+          research = data && Array.isArray(data.sources) && ['ready', 'partial', 'unavailable'].includes(data.status)
+            ? data : { status: 'unavailable', sources: [], error: '检索服务返回了无效资料' }
+        } catch {
+          research = { status: 'unavailable', sources: [], error: globalAbort.signal.aborted ? '查证已停止' : '网络中断，未能查证资料' }
+        }
+        updatePanel(tid, panelMsgId, p => ({ ...p, research }))
+      }
 
       const basePayload: Record<string, unknown> = {
         ...apiBase, task, isFollowUp,
+        ...(research ? { research } : {}),
         ...(previousJudgments.length > 0 ? { previousJudgments } : {}),
       }
 
       const advisorTasks = advisorsWithProfiles.map(advisor => async () => {
-        const priorTurn = buildPriorTurn(currentMessages, advisor.id as AdvisorId)
         return fetchSingleAdvisor(
           advisor,
-          priorTurn ? { ...basePayload, priorTurn } : basePayload,
+          { ...basePayload, context: buildConversationContext(currentMessages, advisor.id) },
           tid, panelMsgId, globalAbort.signal,
         )
       })
 
-      await runWithConcurrency(advisorTasks, ADVISOR_CONCURRENCY, ADVISOR_STAGGER_MS)
+      await runWithConcurrency(advisorTasks, ADVISOR_CONCURRENCY, ADVISOR_STAGGER_MS, globalAbort.signal)
     } catch (e: unknown) {
       if (!(e instanceof Error && e.name === 'AbortError')) {
         setError(e instanceof Error ? e.message : String(e))
@@ -524,7 +536,7 @@ export function useStreaming(
       currentPanelRef.current = null
       setIsStreaming(false)
     }
-  }, [isStreaming, targetAdvisor, updateThread, flushTokens, fetchSingleAdvisor])
+  }, [isStreaming, targetAdvisor, updateThread, updatePanel, flushTokens, fetchSingleAdvisor])
 
   // ── iOS 可见性恢复检测 ─────────────────────────────────────────────────────
 

@@ -63,11 +63,11 @@ function AgentResponseSection({
 }: Props) {
   const { copied, copy } = useCopy()
   const streamData = useMemo(() => {
-    if (status !== 'thinking' || !streamingText || streamingText.length < 20) return null
+    if (!streamingText || streamingText.length < 20) return null
     return extractStreamingFields(streamingText)
-  }, [status, streamingText])
+  }, [streamingText])
 
-  const data = judgment ?? streamData ?? undefined
+  const data = status === 'thinking' && streamData?.core_judgment ? streamData : judgment ?? streamData ?? undefined
   const sections = getVisibleJudgmentSections(data)
   const isStreaming = status === 'thinking' && sections.length > 0
 
@@ -103,6 +103,7 @@ function AgentResponseSection({
         {status === 'thinking' && sections.length === 0 && (
           <p className="mt-2 text-[13px] text-[var(--text-muted)]">正在思考…</p>
         )}
+        {status === 'queued' && <p className="mt-2 text-[13px] text-[var(--text-muted)]">等待生成…</p>}
       </header>
 
       {sections.length > 0 && (
@@ -128,6 +129,13 @@ function AgentResponseSection({
               重试
             </button>
           )}
+        </p>
+      )}
+
+      {status === 'partial' && (
+        <p className="mt-3 text-sm leading-6 text-[var(--text-muted)]">
+          部分回答{errorDetail ? `：${errorDetail}` : '，内容尚未完整生成'}。
+          {onRetry && <button onClick={onRetry} className="ml-2 min-h-11 text-[var(--action)] underline underline-offset-4">重新生成本节</button>}
         </p>
       )}
 

@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react'
 import type { Provider } from '@/lib/types'
+import { modelKey } from '@/lib/modelSelection'
 
 interface Props {
   value: string
@@ -36,7 +37,8 @@ export default function ModelSelector({ value, onChange, disabled, providers }: 
 
   const activeProviders = providers.filter(p => p.models.length > 0)
   const hasModels = activeProviders.length > 0
-  const displayName = value || '未选择'
+  const chosen = activeProviders.flatMap(p => p.models.map(model => ({ key: modelKey(p.id, model), model, provider: p.name }))).find(item => item.key === value)
+  const displayName = chosen?.model || (value.startsWith('provider:') ? '请选择模型' : value) || '未选择'
 
   return (
     <div ref={containerRef} className="relative">
@@ -48,7 +50,7 @@ export default function ModelSelector({ value, onChange, disabled, providers }: 
             ? 'border-[var(--action)] bg-[var(--action)] text-[var(--surface)]'
             : 'border-[var(--line)] bg-[var(--bubble)] text-[var(--text-muted)] hover:border-[var(--action)] hover:text-[var(--action)]'
           } ${disabled ? 'cursor-not-allowed opacity-50' : ''}`}
-        title="切换模型"
+        title={chosen ? `${chosen.provider} · ${chosen.model}` : '切换模型'}
       >
         <svg className="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
           <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
@@ -67,11 +69,12 @@ export default function ModelSelector({ value, onChange, disabled, providers }: 
                 <div key={p.id} className="border-b border-[var(--line)] px-3 py-2 last:border-b-0">
                   <p className="mb-1 px-2 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-faint)]">{p.name}</p>
                   {p.models.map(m => {
-                    const active = value === m
+                    const key = modelKey(p.id, m)
+                    const active = value === key
                     return (
                       <button
                         key={m}
-                        onClick={() => select(m)}
+                        onClick={() => select(key)}
                         className={`flex min-h-9 w-full items-center justify-between rounded-lg px-2 text-left text-xs transition-colors
                           ${active
                             ? 'bg-[var(--action)] text-[var(--surface)]'

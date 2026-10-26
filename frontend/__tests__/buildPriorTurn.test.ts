@@ -73,7 +73,7 @@ describe('serializeJudgmentTurn', () => {
     }
     const parsed = JSON.parse(serializeJudgmentTurn(j))
     expect(Object.keys(parsed)).toEqual([
-      'advisor', 'stance', 'core_judgment', 'reasoning', 'criticism', 'blind_spot',
+      'advisor', 'stance', 'core_judgment', 'reasoning',
     ])
   })
 })

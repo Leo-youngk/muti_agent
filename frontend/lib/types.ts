@@ -9,7 +9,23 @@ export type BuiltinAdvisorId =
 /** 顾问 ID 可以是内置 ID 或用户自定义 ID（字符串）*/
 export type AdvisorId = string
 
-export type AdvisorStatus = 'idle' | 'thinking' | 'done' | 'error'
+export type AdvisorStatus = 'queued' | 'idle' | 'thinking' | 'partial' | 'done' | 'error'
+
+/** 每轮独立保存，后续修改顾问设置不改变历史。密钥不进入会话。 */
+export interface AdvisorSnapshot {
+  id: string
+  name: string
+  nameEn: string
+  color: string
+  icon: string
+  tagline: string
+  profile: string
+}
+
+export interface ModelTarget {
+  providerId?: string
+  model: string
+}
 
 export interface AdvisorJudgment {
   advisor: string
@@ -29,6 +45,10 @@ export interface PanelResult {
   advisorStatus: Record<string, AdvisorStatus>
   advisorErrors?: Record<string, string | undefined>
   streamingTexts: Record<string, string | undefined>
+  participants?: AdvisorSnapshot[]
+  model?: ModelTarget
+  promptVersion?: string
+  research?: ResearchResult
 }
 
 export interface Message {
@@ -90,6 +110,7 @@ export interface AppSettings {
   maxTokensCap?: number
   /** 高级参数：服务端单次调用超时（毫秒，undefined 用服务端默认 120000） */
   timeoutMs?: number
+  webSearch?: { enabled: boolean; apiKey: string }
   theme?: 'sage' | 'ocean' | 'midnight' | 'rose' | 'amber'
 }
 
@@ -99,9 +120,31 @@ export interface PriorTurn {
   judgment: AdvisorJudgment
 }
 
+export interface ConversationContext {
+  background: string[]
+  turns: { question: string; judgment?: AdvisorJudgment }[]
+  omittedTurns: number
+}
+
+export interface ResearchSource {
+  id: number
+  title: string
+  url: string
+  excerpt: string
+  kind: 'page_excerpt' | 'search_excerpt'
+}
+
+export interface ResearchResult {
+  status: 'searching' | 'ready' | 'partial' | 'unavailable'
+  sources: ResearchSource[]
+  error?: string
+  retrievedAt?: string
+}
+
 export interface PreviousJudgment {
   advisorId: AdvisorId
   judgment: AdvisorJudgment
+  question?: string
 }
 
 export interface FollowUpMeta {
@@ -119,6 +162,7 @@ export interface StreamEvent {
   advisorId?: string
   token?: string
   judgment?: AdvisorJudgment | null
+  status?: 'done' | 'partial' | 'error'
   error?: string
   /** 辩论模式下标记阶段 */
   phase?: 'initial' | 'debate'

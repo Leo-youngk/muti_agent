@@ -1,9 +1,21 @@
-import { get, set } from 'idb-keyval'
+import { getMany, set, setMany } from 'idb-keyval'
 import type { Thread, AppSettings, PanelResult } from './types'
 import { DEFAULT_HIDDEN_ADVISOR_IDS, ADVISOR_ROSTER_VERSION } from './advisors'
+import { normalizeModelSelection } from './modelSelection'
+import { getPartialJudgment } from './judgment'
+import { getPanelAdvisors } from './discussionPresentation'
 
 const THREADS_KEY = 'advisor_threads_v3'
 const SETTINGS_KEY = 'advisor_settings_v2'
+const SAVED_AT_KEY = 'advisor_threads_saved_at'
+const CHECKPOINT_KEY = 'advisor_threads_checkpoint_v1'
+
+function readCheckpoint(): { savedAt: number; threads: Thread[] } | null {
+  return safe(() => {
+    const parsed = JSON.parse(localStorage.getItem(CHECKPOINT_KEY) || 'null')
+    return parsed && Array.isArray(parsed.threads) && typeof parsed.savedAt === 'number' ? parsed : null
+  }, null)
+}
 
 // ─── IndexedDB 存储（容量远大于 localStorage 的 5MB）─────────────────────────
 
@@ -18,9 +30,9 @@ function healStaleStatus(threads: Thread[]): Thread[] {
     messages: t.messages.map(m => {
       if (!m.panel) return m
       const p = m.panel
-      if (!Object.values(p.advisorStatus).some(s => s === 'thinking')) return m
+      if (!Object.values(p.advisorStatus).some(s => s === 'thinking' || s === 'queued')) return m
       const staleIds = Object.entries(p.advisorStatus)
-        .filter(([, s]) => s === 'thinking')
+        .filter(([, s]) => s === 'thinking' || s === 'queued')
         .map(([id]) => id)
       return {
         ...m,
@@ -28,7 +40,7 @@ function healStaleStatus(threads: Thread[]): Thread[] {
           ...p,
           advisorStatus: Object.fromEntries(
             Object.entries(p.advisorStatus).map(([id, s]) =>
-              [id, s === 'thinking' ? 'error' : s]
+              [id, s === 'thinking' ? (p.judgments[id] ? 'partial' : 'error') : s === 'queued' ? 'idle' : s]
             )
           ) as Record<string, import('./types').AdvisorStatus>,
           advisorErrors: {
@@ -49,7 +61,13 @@ function stripStreamingData(threads: Thread[]): Thread[] {
       if (!m.panel) return m
       const cleaned: PanelResult = {
         ...m.panel,
+        judgments: { ...m.panel.judgments },
         streamingTexts: {},   // 不保存原始 token 流
+      }
+      for (const [id, text] of Object.entries(m.panel.streamingTexts ?? {})) {
+        const name = m.panel.participants?.find(a => a.id === id)?.name || m.panel.judgments[id]?.advisor || id
+        const partial = getPartialJudgment(text, name)
+        if (partial && m.panel.advisorStatus[id] !== 'done') cleaned.judgments[id] = partial
       }
       return { ...m, panel: cleaned }
     }),
@@ -62,7 +80,9 @@ function stripStreamingData(threads: Thread[]): Thread[] {
 export async function loadThreads(): Promise<Thread[]> {
   try {
     // 先尝试 IndexedDB
-    const data = await get<Thread[]>(THREADS_KEY)
+    const [data, savedAt] = await getMany([THREADS_KEY, SAVED_AT_KEY]) as [Thread[] | undefined, number | undefined]
+    const checkpoint = readCheckpoint()
+    if (checkpoint && (!data || checkpoint.savedAt >= (savedAt ?? 0))) return healStaleStatus(checkpoint.threads)
     if (data && data.length > 0) return healStaleStatus(data)
 
     // 回退：从旧 localStorage 迁移
@@ -79,19 +99,34 @@ export async function loadThreads(): Promise<Thread[]> {
     return []
   } catch {
     return safe(() => {
+      const checkpoint = readCheckpoint()
+      if (checkpoint) return healStaleStatus(checkpoint.threads)
       const raw = localStorage.getItem('advisor_threads_v2') || localStorage.getItem(THREADS_KEY)
       return raw ? healStaleStatus(JSON.parse(raw) as Thread[]) : []
     }, [])
   }
 }
 
-export async function saveThreads(threads: Thread[]): Promise<void> {
+export function checkpointThreads(threads: Thread[], savedAt = Date.now()): boolean {
+  return safe(() => {
+    const previous = readCheckpoint()
+    if (!previous || previous.savedAt <= savedAt) {
+      localStorage.setItem(CHECKPOINT_KEY, JSON.stringify({ savedAt, threads: stripStreamingData(threads) }))
+    }
+    return true
+  }, false)
+}
+
+export async function saveThreads(threads: Thread[], savedAt = Date.now()): Promise<boolean> {
   const cleaned = stripStreamingData(threads)
   try {
-    await set(THREADS_KEY, cleaned)
+    await setMany([[THREADS_KEY, cleaned], [SAVED_AT_KEY, savedAt]])
+    const checkpoint = readCheckpoint()
+    if (checkpoint && checkpoint.savedAt <= savedAt) safe(() => localStorage.removeItem(CHECKPOINT_KEY), undefined)
+    return true
   } catch {
     // 回退到 localStorage
-    safe(() => localStorage.setItem(THREADS_KEY, JSON.stringify(cleaned)), undefined)
+    return checkpointThreads(cleaned, savedAt)
   }
 }
 
@@ -99,6 +134,8 @@ export async function saveThreads(threads: Thread[]): Promise<void> {
 
 export function loadThreadsSync(): Thread[] {
   return safe(() => {
+    const checkpoint = readCheckpoint()
+    if (checkpoint) return healStaleStatus(checkpoint.threads)
     const raw = localStorage.getItem('advisor_threads_v2') || localStorage.getItem(THREADS_KEY)
     return raw ? healStaleStatus(JSON.parse(raw) as Thread[]) : []
   }, [])
@@ -110,7 +147,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   providers: [],
   apiKey: '',
   baseUrl: '',
-  defaultModel: 'deepseek-v4-flash',
+  defaultModel: '',
   customProfiles: {},
   customAdvisors: [],
   hiddenAdvisors: [],
@@ -121,10 +158,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   timeoutMs: 120_000,
   theme: 'sage',
 }
-
-const LEGACY_PRESET_MODELS = [
-  'deepseek-v4-flash', 'qwen3.7-plus',
-]
 
 export function loadSettings(): AppSettings {
   return safe(() => {
@@ -146,7 +179,6 @@ export function loadSettings(): AppSettings {
     if (s.providers.length === 0 && (s.apiKey || s.baseUrl)) {
       const models = new Set<string>()
       if (s.defaultModel) models.add(s.defaultModel)
-      LEGACY_PRESET_MODELS.forEach(m => models.add(m))
       try {
         const custom: string[] = JSON.parse(localStorage.getItem('advisor_custom_models') ?? '[]')
         custom.forEach(m => models.add(m))
@@ -161,31 +193,13 @@ export function loadSettings(): AppSettings {
       }]
     }
 
-    // 确保预设模型始终存在于第一个 provider 中
-    if (s.providers.length > 0) {
-      const allModels = new Set(s.providers.flatMap(p => p.models))
-      const missing = LEGACY_PRESET_MODELS.filter(m => !allModels.has(m))
-      if (missing.length > 0) {
-        s.providers[0] = {
-          ...s.providers[0],
-          models: [...s.providers[0].models, ...missing],
-        }
-        // 写回，避免每次加载都触发
-        localStorage.setItem(SETTINGS_KEY, JSON.stringify(s))
-      }
+    const migratedModel = normalizeModelSelection(s, s.defaultModel)
+    if (migratedModel !== s.defaultModel) {
+      s.defaultModel = migratedModel
+      localStorage.setItem(SETTINGS_KEY, JSON.stringify(s))
     }
-
     return s
   }, DEFAULT_SETTINGS)
-}
-
-export function resolveProvider(settings: AppSettings, model: string): { apiKey: string; baseUrl: string } | null {
-  for (const p of settings.providers) {
-    if (p.models.includes(model)) {
-      return { apiKey: p.apiKey, baseUrl: p.baseUrl }
-    }
-  }
-  return null
 }
 
 export function saveSettings(s: AppSettings): void {
@@ -211,22 +225,19 @@ export function threadToMarkdown(thread: Thread): string {
     } else if (msg.role === 'panel' && msg.panel) {
       const { judgments } = msg.panel
 
-      for (const [, j] of Object.entries(judgments)) {
+      for (const meta of getPanelAdvisors(msg.panel, [])) {
+        const j = judgments[meta.id]
         if (!j) continue
         lines.push(`### ${j.advisor}（${j.stance}）`)
+        if (msg.panel.advisorStatus[meta.id] !== 'done') lines.push('> 部分回答，尚未完整生成')
         lines.push('')
         lines.push(`**核心判断**：${j.core_judgment}`)
         lines.push('')
         lines.push(`**推理**：${j.reasoning}`)
         lines.push('')
-        lines.push(`**核心批评**：${j.criticism ?? ''}`)
-        lines.push('')
-        if (j.focus) lines.push(`关注焦点：${j.focus}`)
-        if (j.demand) lines.push(`要求改变：${j.demand}`)
-        if (j.approach) lines.push(`如何切入：${j.approach}`)
-        lines.push(`盲点：${j.blind_spot ?? ''}`)
-        lines.push('')
       }
+
+      for (const source of msg.panel.research?.sources ?? []) lines.push(`- [${source.title}](${source.url})（${source.kind === 'page_excerpt' ? '网页摘录' : '搜索摘要'}）`)
 
       lines.push('---')
       lines.push('')

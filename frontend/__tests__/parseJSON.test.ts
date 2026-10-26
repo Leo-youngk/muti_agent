@@ -1,18 +1,6 @@
 import { describe, it, expect } from 'vitest'
 
-// Import the function directly from the route file — we extract the logic for testing
-// Since parseJSON is not exported, we re-implement the same logic here to validate
-
-function parseJSON<T>(text: string): T | null {
-  const stripped = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim()
-  try { return JSON.parse(stripped) as T } catch {}
-  const first = stripped.indexOf('{')
-  const last = stripped.lastIndexOf('}')
-  if (first !== -1 && last > first) {
-    try { return JSON.parse(stripped.slice(first, last + 1)) as T } catch {}
-  }
-  return null
-}
+import { parseJSON } from '@/app/api/chat/shared'
 
 describe('parseJSON', () => {
   it('parses valid JSON', () => {
@@ -43,7 +31,6 @@ describe('parseJSON', () => {
   })
 
   it('handles JSON with trailing comma gracefully', () => {
-    // This should fail parsing but still return null gracefully
-    expect(parseJSON('{"a": 1,}')).toBeNull()
+    expect(parseJSON('{"a": 1,}')).toEqual({ a: 1 })
   })
 })

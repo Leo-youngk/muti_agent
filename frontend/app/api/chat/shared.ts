@@ -1,62 +1,23 @@
 import type { AdvisorJudgment, PreviousJudgment, AdvisorId } from '@/lib/types'
 import { stripThinkAndFence } from '@/lib/parseStreaming'
+export { buildAdvisorSystemPrompt } from '@/lib/advisorPrompt'
 
 // ─── Prompt 构建 ───────────────────────────────────────────────────────────────
-
-export function buildAdvisorSystemPrompt(profile: string): string {
-  return `你就是下面这个人。不是在"扮演"，不是在"分析他会怎么想"——你就是他，此刻坐在用户对面，用户问了你一个问题，你正在回答。
-
-你的每一句话都必须像从这个人嘴里说出来的。用他的口头禅，用他的思维路径，用他会有的情绪反应。如果他会骂人，你就骂。如果他会讲故事，你就讲。如果他会冷笑，你就冷笑。
-
-=== 你是谁 ===
-${profile}
-=== 档案结束 ===
-
-【关键规则】
-1. 完全第一人称。你就是这个人在说话。"我""你""咱们"——自然的对话。
-2. 用档案里的真实语录风格说话。不是引用他的话，是像他一样说新的话。他的句式、他的用词习惯、他的情绪浓度，都要还原。
-3. 先有情绪反应，再有逻辑。真人听到一个问题，第一反应是情绪（兴奋/不屑/好奇/愤怒），然后才展开逻辑。你也要这样。
-4. 必须有明确立场。绝不骑墙，绝不"一方面……另一方面"。这个人对这件事到底怎么看？直说。
-5. 禁止分析腔。"从XX角度看""以XX的思维""作为一个XX"——这些全部禁止。你不是在分析一个人物，你就是这个人。
-6. 可以主动扯到你的亲身经历。乔布斯可以提iPhone，马斯克可以提SpaceX，巴菲特可以提可口可乐的投资，芒格可以提他的误判心理学。这让回答更真实。
-
-简体中文，纯 JSON 输出，不加 markdown。
-
-{
-  "advisor": "你的名字",
-  "stance": "支持 | 反对 | 有条件支持 | 需要更多信息",
-  "core_judgment": "一句话，用你自己的语气和口吻，这是你听完问题的第一反应",
-  "reasoning": "3-5句话。像你平时跟人聊天一样说——可以举你自己的例子、讲你经历过的事、反问对方、嘲讽你觉得蠢的地方。不要像写论文。",
-  "criticism": "你对用户这个想法最狠的批评。用你说话的方式怼——不是客气的'建议'，是你真实会说的话。",
-  "blind_spot": "你自己在这件事上可能忽略了什么（简短一句话）"
-}`
-}
 
 export function buildOthersAddendum(
   previousJudgments: PreviousJudgment[],
   selfId: AdvisorId,
   isFollowUp: boolean,
 ): string {
+  if (!isFollowUp) return ''
   const others = previousJudgments.filter(p => p.advisorId !== selfId)
   if (others.length === 0) return ''
 
-  if (!isFollowUp) {
-    const lines = others.map(({ judgment: j }) => `${j.advisor}（${j.stance}）：${j.core_judgment}`)
-    return `
-
-=== 背景：其他人对这件事的判断 ===
-${lines.join('\n')}
-=== 背景结束 ===
-
-这是给你的参考，不要复述他们的话。仍然只输出你自己的 JSON。`
-  }
-
-  const blocks = others.map(({ judgment: j }) => {
-    return `【${j.advisor}】立场：${j.stance}
+  const blocks = others.map(({ judgment: j, question }) => {
+    return `【${j.advisor}】对应问题：${question ?? '上一轮讨论'}
+立场：${j.stance}
 核心判断：${j.core_judgment}
-推理：${j.reasoning}
-批评：${j.criticism}
-盲点：${j.blind_spot}`
+依据：${j.reasoning}`
   }).join('\n\n')
 
   return `
@@ -67,8 +28,8 @@ ${blocks}
 
 追问模式要求：
 1. 用户正在单独追问你。认真回答他的新问题。
-2. 如果其他顾问的观点与你冲突，你必须主动回应——明确说明为什么你不同意，或者承认他们指出的合理之处。
-3. 不要回避分歧。如果别人批评了你可能忽略的东西，正面应对。
+2. 这些是对标注问题的历史意见，不是已验证事实；只在与当前追问相关时回应，不把别的话题的意见套在本题上。
+3. 有分歧时给出具体依据，也可以认可合理意见，不强迫争论。
 4. 你可以修正自己的立场，但必须说明为什么改变。
 5. 仍然按照原有 JSON 格式输出。`
 }
@@ -84,8 +45,6 @@ export function serializeJudgmentTurn(j: AdvisorJudgment): string {
     stance: j.stance,
     core_judgment: j.core_judgment,
     reasoning: j.reasoning,
-    criticism: j.criticism,
-    blind_spot: j.blind_spot,
   })
 }
 
@@ -255,17 +214,17 @@ export function extractPartialAdvisorJudgment(
     advisor:       get('advisor') || fallbackName,
     stance,
     core_judgment: core,
-    reasoning:     get('reasoning') || '（输出被中断，无法获取完整推理）',
-    criticism:     get('criticism') || '（未能完整生成）',
-    blind_spot:    get('blind_spot')|| '—',
+    reasoning:     get('reasoning'),
+    criticism:     get('criticism'),
+    blind_spot:    get('blind_spot'),
     focus:         get('focus')     || undefined,
     demand:        get('demand')    || undefined,
     approach:      get('approach')  || undefined,
   }
 }
 
-// 硬上限放宽到 1M：部分网关模型（minimax 等）支持百万级上下文。
-// 实际发送值由 maxTokensCap 决定（默认 16384），这里仅作为不截断用户设置的上限。
+// 用户可配置的输出请求上限，不代表模型支持该输出长度，也不等于上下文窗口。
+// 默认仍为 16384；具体可用范围由服务商验证，不根据模型名称臆测能力。
 export const MAX_TOKENS_HARD_CAP = 1_000_000
 
 /** 创建 SSE 发送函数和心跳，统一管理连接生命周期 */

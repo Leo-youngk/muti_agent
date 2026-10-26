@@ -4,7 +4,8 @@ import { useState, useCallback, useRef, useEffect } from 'react'
 import { v4 as uuidv4 } from 'uuid'
 import type { Thread, PanelResult } from './types'
 import type { AdvisorMeta } from './advisors'
-import { loadThreadsSync, saveThreads } from './storage'
+import { checkpointThreads, loadThreadsSync, saveThreads } from './storage'
+import { PROMPT_VERSION } from './advisorPrompt'
 
 // ─── 工厂函数 ─────────────────────────────────────────────────────────────────
 
@@ -15,9 +16,9 @@ export function makeThread(): Thread {
 /** activeAdvisors：本次提问的顾问列表（从 settings 计算得出）*/
 export function makeInitialPanel(activeAdvisors: AdvisorMeta[]): PanelResult {
   const advisorStatus = Object.fromEntries(
-    activeAdvisors.map(a => [a.id, 'idle' as const])
-  ) as Record<string, 'idle'>
-  return { judgments: {}, advisorStatus, streamingTexts: {} }
+    activeAdvisors.map(a => [a.id, 'queued' as const])
+  ) as Record<string, 'queued'>
+  return { judgments: {}, advisorStatus, streamingTexts: {}, participants: activeAdvisors.map(a => ({ ...a })), promptVersion: PROMPT_VERSION }
 }
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
@@ -30,6 +31,9 @@ export function useThreads() {
   // 避免"新问题"首屏闪烁后被历史对话覆盖。
   const [booted, setBooted] = useState(() => threads.length > 0)
   const threadsRef = useRef<Thread[]>(threads)
+  const changedAt = useRef(0)
+  const saveQueue = useRef<Promise<unknown>>(Promise.resolve())
+  const [storageError, setStorageError] = useState<string | null>(null)
   useEffect(() => { threadsRef.current = threads }, [threads])
 
   // 异步加载 IndexedDB 数据覆盖同步初始值
@@ -57,17 +61,51 @@ export function useThreads() {
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const isStreamingRef = useRef(false)
 
-  const scheduleSave = useCallback((updatedThreads: Thread[]) => {
-    if (saveTimer.current) clearTimeout(saveTimer.current)
-    const delay = isStreamingRef.current ? 2000 : 500
-    saveTimer.current = setTimeout(() => { saveThreads(updatedThreads) }, delay)
+  const persistNow = useCallback(() => {
+    if (!changedAt.current) return
+    const snapshot = threadsRef.current
+    const savedAt = changedAt.current
+    saveQueue.current = saveQueue.current.then(() => saveThreads(snapshot, savedAt)).then(ok => {
+      setStorageError(ok ? null : '历史记录保存失败，请先导出当前对话，检查浏览器存储空间。')
+    })
   }, [])
+
+  const scheduleSave = useCallback(() => {
+    // 流式使用固定间隔检查点；持续输出不能反复推迟写入。
+    if (saveTimer.current && isStreamingRef.current) return
+    if (saveTimer.current) clearTimeout(saveTimer.current)
+    saveTimer.current = setTimeout(() => {
+      saveTimer.current = null
+      persistNow()
+    }, isStreamingRef.current ? 1500 : 300)
+  }, [persistNow])
+
+  useEffect(() => {
+    if (!booted) return
+    const flush = () => {
+      if (!changedAt.current) return
+      if (saveTimer.current) clearTimeout(saveTimer.current)
+      saveTimer.current = null
+      checkpointThreads(threadsRef.current, changedAt.current)
+      persistNow()
+    }
+    const onVisibility = () => { if (document.visibilityState === 'hidden') flush() }
+    window.addEventListener('pagehide', flush)
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      window.removeEventListener('pagehide', flush)
+      document.removeEventListener('visibilitychange', onVisibility)
+      flush()
+    }
+  }, [booted, persistNow])
 
   // 包装 setThreads 以触发自动保存
   const setThreadsAndSave = useCallback((updater: Thread[] | ((prev: Thread[]) => Thread[])) => {
     setThreads(prev => {
       const next = typeof updater === 'function' ? updater(prev) : updater
-      scheduleSave(next)
+      threadsRef.current = next
+      changedAt.current = Math.max(Date.now(), changedAt.current + 1)
+      scheduleSave()
       return next
     })
   }, [scheduleSave])
@@ -125,5 +163,6 @@ export function useThreads() {
     renameThread,
     isStreamingRef,
     booted,
+    storageError,
   }
 }

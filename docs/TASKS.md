@@ -4,6 +4,25 @@
 
 状态：completed
 
+### 2026-10-26 回答质量、连续对话与可靠性
+
+范围与验收：[QUALITY_IMPROVEMENTS.md](QUALITY_IMPROVEMENTS.md)。
+
+- [x] 提示词 V2 与有界多轮上下文
+- [x] 运行时结果校验、部分回答状态、停止和重试保留内容
+- [x] 服务商与模型身份、旧选择迁移，移除强制补入模型
+- [x] 每轮顾问快照与历史稳定显示
+- [x] 草稿、中文输入法、后台持久化与恢复
+- [x] 24 题固定内容评测、原提示词基线及真实 A/B 运行器
+- [x] 联网接口、共享资料、引用和显式降级；成功路径使用受控 fixture 验证
+- [x] 自动检查、浏览器验收与 GitHub 提交；按用户最新要求不部署
+
+验证证据：14 个 Vitest 文件、66 项测试通过；`npx tsc --noEmit`、`npm run lint`、`npm run build` 通过。OpenNext 产物构建成功；本地 workerd 首页/manifest 为 200，缺少 BYOK 的 advisor/research 返回受控 400。
+
+Playwright Chromium 验证：320 / 375 / 390 / 430 手机视口与 1280 桌面无横向溢出；1 / 4 / 10 位顾问顺序；同名模型第二家服务商路由；生成时写草稿；组合输入不发送；隐藏顾问后的历史与追问；共享一次查证；停止后重开保留内容。验收使用明确标注的测试 SSE 与资料，不作为真实模型回答；未做 iPhone 真机验收。
+
+外部验证限制：本机未发现可用模型凭据，真实内容 A/B 未执行。已有 Brave 凭据被真实服务返回 `SUBSCRIPTION_TOKEN_INVALID`，未取得真实检索成功结果；失效密钥与检索失败的可见降级已验证，联网默认关闭。需要有效的用户 BYOK 后才能完成这些外部服务实测。
+
 ### 2026-08-06 修复 Windows 部署并发布 Cloudflare Worker
 
 - [x] 根因一：`@opennextjs/aws` 包损坏（缺 `package.json` / `logger.js`），`npm install` 修复。

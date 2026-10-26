@@ -12,7 +12,8 @@
     "start": "next start",
     "lint": "eslint .",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "eval:quality": "node --experimental-strip-types evals/run-quality.mjs"
   },
   "dependencies": {
     "@opennextjs/cloudflare": "1.20.2",

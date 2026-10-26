@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, type CSSProperties } from 'react'
 import type { AppSettings, CustomAdvisor, BuiltinAdvisorId, Provider } from '@/lib/types'
 import { ADVISORS, ADVISOR_COLOR_PRESETS } from '@/lib/advisors'
+import { modelKey } from '@/lib/modelSelection'
 
 interface Props {
   settings: AppSettings
@@ -701,12 +702,12 @@ export default function SettingsModal({ settings, onSave, onClose }: Props) {
                 <div className="pt-2 border-t border-[var(--line)]">
                   <label className="block text-[10px] font-semibold text-[var(--text-muted)] mb-1.5 uppercase tracking-widest">默认模型</label>
                   <div className="space-y-1">
-                    {draft.providers.flatMap(p => p.models ?? []).map(m => (
-                      <button key={m} onClick={() => setDraft(d => ({ ...d, defaultModel: m }))}
+                    {draft.providers.flatMap(p => (p.models ?? []).map(m => ({ provider: p, model: m }))).map(({ provider, model: m }) => (
+                      <button key={modelKey(provider.id, m)} onClick={() => setDraft(d => ({ ...d, defaultModel: modelKey(provider.id, m) }))}
                         className={`w-full text-left px-3 py-1.5 rounded-xl text-xs transition-colors ${
-                          draft.defaultModel === m ? 'bg-[var(--text)] text-[var(--page)] font-medium' : 'text-[var(--text)] hover:bg-[var(--bubble)]'
+                          draft.defaultModel === modelKey(provider.id, m) ? 'bg-[var(--text)] text-[var(--page)] font-medium' : 'text-[var(--text)] hover:bg-[var(--bubble)]'
                         }`}>
-                        {m}
+                        {provider.name} · {m}
                       </button>
                     ))}
                   </div>
@@ -714,6 +715,14 @@ export default function SettingsModal({ settings, onSave, onClose }: Props) {
               )}
 
               {/* 高级参数（滑块） */}
+              <details className="border-t border-[var(--line)] pt-3">
+                <summary className="min-h-11 cursor-pointer text-sm text-[var(--text)]">联网查证</summary>
+                <p className="mb-3 text-xs leading-6 text-[var(--text-muted)]">使用 Brave Search 取得网页摘录，供本轮顾问共享。开启时会将问题发送给检索服务；密钥仅保存在此浏览器。</p>
+                <label className="block text-xs text-[var(--text-muted)]" htmlFor="search-key">Brave Search API Key</label>
+                <input id="search-key" type="password" autoComplete="off" value={draft.webSearch?.apiKey ?? ''}
+                  onChange={event => setDraft(d => ({ ...d, webSearch: { enabled: d.webSearch?.enabled ?? false, apiKey: event.target.value } }))}
+                  className="mt-2 min-h-11 w-full rounded-xl border border-[var(--line)] bg-transparent px-3 text-sm text-[var(--text)]" />
+              </details>
               <div className="pt-3 border-t border-[var(--line)] space-y-5">
                 <p className="text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-widest">
                   高级参数 · 滑动调节

@@ -12,6 +12,7 @@ import { getAllAdvisors, getAdvisorMap } from '@/lib/advisors'
 import { AdvisorProvider } from '@/lib/AdvisorContext'
 import { useThreads } from '@/lib/useThreads'
 import { useStreaming } from '@/lib/useStreaming'
+import { normalizeModelSelection, resolveModelTarget } from '@/lib/modelSelection'
 
 export default function ChatApp() {
 
@@ -19,18 +20,27 @@ export default function ChatApp() {
   const {
     threads, activeId, setActiveId, activeThread,
     updateThread, updatePanel, newThread, deleteThread, renameThread,
-    isStreamingRef, booted,
+    isStreamingRef, booted, storageError,
   } = useThreads()
 
   // ── Settings ────────────────────────────────────────────────────────────────
   const [settings, setSettings] = useState<AppSettings>(() => loadSettings())
   const [selectedModel, setSelectedModel] = useState<string>(() => {
     const s = loadSettings()
-    return localStorage.getItem('advisor_model') || s.defaultModel
+    return normalizeModelSelection(s, localStorage.getItem('advisor_model'))
   })
+  useEffect(() => {
+    try { localStorage.setItem('advisor_model', selectedModel) } catch { /* 当前选择仍在内存中 */ }
+  }, [selectedModel])
 
   const activeAdvisors = useMemo(() => getAllAdvisors(settings), [settings])
-  const advisorMap     = useMemo(() => getAdvisorMap(settings), [settings])
+  const advisorMap = useMemo(() => {
+    const map = getAdvisorMap(settings)
+    for (const message of activeThread?.messages ?? []) {
+      for (const meta of message.panel?.participants ?? []) map[meta.id] = meta
+    }
+    return map
+  }, [settings, activeThread])
 
   // 主题色同步到浏览器地址栏/状态栏（metadata 静态值无法跟随本地主题）
   useEffect(() => {
@@ -68,20 +78,28 @@ export default function ChatApp() {
     setSettings(s)
     saveSettings(s)
     // 校验选中模型仍有效：优先保留用户上次选择，其次 defaultModel，最后第一个可用模型
-    const allModels = s.providers.flatMap(p => p.models ?? [])
     const stored = localStorage.getItem('advisor_model')
-    const next = stored && allModels.includes(stored)
-      ? stored
-      : allModels.includes(s.defaultModel)
-        ? s.defaultModel
-        : allModels[0] ?? ''
+    const next = normalizeModelSelection(s, stored)
     setSelectedModel(next)
     localStorage.setItem('advisor_model', next)
   }, [])
 
   const handleSubmit = useCallback((task: string) => {
+    if (!targetAdvisor && activeAdvisors.length === 0) {
+      setError('请先在设置里启用至少一位顾问。')
+      return false
+    }
+    if (targetAdvisor && !advisorMap[targetAdvisor]?.profile) {
+      setError('这位历史顾问缺少档案，请先在设置里恢复配置。')
+      return false
+    }
+    if (!resolveModelTarget(settings, selectedModel)) {
+      setError('请先在设置中添加服务商并选择可用模型。')
+      return false
+    }
     rawSubmit(task, activeId, threads, selectedModel, settings, activeAdvisors)
-  }, [rawSubmit, activeId, threads, selectedModel, settings, activeAdvisors])
+    return true
+  }, [rawSubmit, activeId, threads, selectedModel, settings, activeAdvisors, advisorMap, targetAdvisor, setError])
 
   const openFollowUp = useCallback((advisorId: AdvisorId) => {
     handleFollowUp(advisorId)
@@ -99,11 +117,12 @@ export default function ChatApp() {
     setTargetAdvisor(null)
   }, [newThread, setTargetAdvisor])
 
-  const handleRetry = useCallback((advisorId: AdvisorId) => {
+  const handleRetry = useCallback((advisorId: AdvisorId, panelMsgId?: string) => {
     const thread = threads.find(t => t.id === activeId)
     if (!thread) return
-    const lastPanel = [...thread.messages].reverse().find(m => m.role === 'panel')
-    const lastUser  = [...thread.messages].reverse().find(m => m.role === 'user')
+    const lastPanel = panelMsgId ? thread.messages.find(m => m.id === panelMsgId) : [...thread.messages].reverse().find(m => m.role === 'panel')
+    const panelIndex = lastPanel ? thread.messages.indexOf(lastPanel) : -1
+    const lastUser = thread.messages.slice(0, panelIndex).reverse().find(m => m.role === 'user')
     if (!lastPanel || !lastUser) return
     handleRetryAdvisor(activeId, lastPanel.id, advisorId, lastUser.content, settings, selectedModel, thread.messages, activeAdvisors)
   }, [threads, activeId, handleRetryAdvisor, settings, selectedModel, activeAdvisors])
@@ -207,6 +226,7 @@ export default function ChatApp() {
           </header>
 
           {/* ── 错误提示 ── */}
+          {storageError && <p role="alert" className="mx-auto mt-3 max-w-[680px] px-5 text-sm text-[var(--error)]">{storageError}</p>}
           {error && (
             <div className="mx-auto mt-3 flex w-[calc(100%-2.5rem)] max-w-[680px] items-start gap-2 border-y border-[var(--line)] py-3 text-sm text-[var(--error)]">
               <span className="shrink-0">⚠</span>
@@ -218,7 +238,7 @@ export default function ChatApp() {
           {/* ── 对话区 ── */}
           <ChatView
             messages={activeThread?.messages ?? []}
-            advisors={activeAdvisors}
+            advisors={Object.values(advisorMap)}
             onFollowUp={openFollowUp}
             onRetryAdvisor={handleRetry}
             isStreaming={isStreaming}
@@ -239,6 +259,18 @@ export default function ChatApp() {
             selectedModel={selectedModel}
             onModelChange={handleModelChange}
             providers={settings.providers ?? []}
+            draftKey={activeId}
+            webSearchEnabled={settings.webSearch?.enabled ?? false}
+            onToggleWebSearch={() => {
+              if (!settings.webSearch?.apiKey && !settings.webSearch?.enabled) {
+                setSettingsOpen(true)
+                setError('请在设置的“联网查证”中填写 Brave Search API Key。')
+                return
+              }
+              const next = { ...settings, webSearch: { apiKey: settings.webSearch?.apiKey ?? '', enabled: !settings.webSearch?.enabled } }
+              setSettings(next)
+              saveSettings(next)
+            }}
           />
         </main>
 

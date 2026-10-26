@@ -1,46 +1,48 @@
-# 个人项目 Agent Harness v1
+# 多 Agent 讨论室
 
-把本目录里的文件放到你的项目根目录即可使用。
+个人使用、移动优先的多顾问对话应用。输入一个问题，多位内置或自定义顾问按各自思维方式给出判断，支持实时输出和定向追问。
 
-## 文件说明
+活跃应用位于 `frontend/`：Next.js 16、React、TypeScript、OpenAI 兼容 SDK、SSE。历史与设置保存在当前浏览器，PWA 支持添加到 iPhone 主屏幕。原 `backend/`、`engines/` 是未接入的历史实现。
 
-- `AGENTS.md`：给 Codex、Claude Code、Cursor 等 coding agent 的入口指令。
-- `docs/EVALS.md`：验证闭环、失败处理规则和停止条件。
-- `docs/TASKS.md`：当前任务和验收标准。
-- `docs/PROJECT_CONTEXT.md`：稳定的产品、用户、技术栈和架构上下文。
-- `docs/DECISIONS.md`：需要长期保留的技术/产品决策。
-- `docs/RETROSPECTIVE.md`：把重复错误沉淀成规则。
-- `prompts/agent-task.md`：每次启动 agent 任务时可直接粘贴的提示词。
-- `scripts/agent-validate.ps1`：自动验证脚本，支持常见 Node 和 Python 项目。
-
-## 使用方式
-
-1. 把本目录所有文件复制到你的项目根目录。
-2. 只填写 `USER_BRIEF.md`。
-3. 启动 Codex 或 Claude Code，粘贴 `prompts/agent-task.md`。
-4. 让 AI 自动补齐 `docs/PROJECT_CONTEXT.md`、`docs/TASKS.md`、`docs/EVALS.md` 和 `docs/DECISIONS.md`。
-5. 要求 agent 执行：
+## 本地运行
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts/agent-validate.ps1
+cd frontend
+npm ci
+npm run dev
 ```
 
-## 核心效果
+在设置中添加模型服务商、Base URL 和 API Key，加载并选择服务商实际支持的模型。模型选择同时绑定服务商身份，同名模型可以独立使用。也可通过被 Git 忽略的环境配置提供 `OPENAI_API_KEY`、`OPENAI_BASE_URL`，作为服务端回退。
 
-这套 harness 会强制 agent 按下面的闭环工作：
+## 对话能力
 
-```text
-读取用户方向 -> AI 补齐任务和验收标准 -> 修改代码 -> 运行验证 -> 读取失败 -> 修复根因 -> 再次验证 -> 达标停止
+- 人物风格保留在判断尺度与语言中；回答突出用户条件、依据、适用前提和下一步。
+- 保存最近多轮问答与较早用户原文，较新修正优先；定向追问可参考同一轮其他顾问意见。
+- 区分排队、生成、完成、部分回答、停止和失败；单顾问重试保留之前可读的内容。
+- 每轮保存顾问与模型快照，调整当前顾问开关不会隐藏历史。
+- 生成时可写草稿；草稿按线程恢复；切后台保存可读的部分正文。
+- 可导出 Markdown。浏览器本地数据不进行跨设备云同步。
+
+## 可选联网查证
+
+在设置的“联网查证”中填写自己的 Brave Search API Key，然后点输入栏“联网”。每次提问只检索一次，网页摘录供本轮全部顾问共享。结果中明确区分网页摘录、仅搜索摘要和查证失败。
+
+生产环境使用用户提供的检索密钥；开发模式可读取本机已有 `BRAVE_API_KEY`。检索密钥不进入对话历史或日志。
+
+## 验证与质量评测
+
+```powershell
+npm run test -- --maxWorkers=4
+npx tsc --noEmit
+npm run lint
+npm run build
+npm run eval:quality -- --dry-run
 ```
 
-不要让 agent 只说“应该可以了”。完成必须有验证证据。
+内容质量评测需要 Node.js 22.6+ 和真实可用的模型凭据，见 [评测说明](frontend/evals/README.md)。题集包含 24 个固定场景，保留旧提示词与 V2 的成对比较；单测通过不代替真实模型质量评测。
 
-## 用户职责
+## 开发记录
 
-你只负责：
+产品与架构见 [PROJECT_CONTEXT](docs/PROJECT_CONTEXT.md)，本轮验收见 [QUALITY_IMPROVEMENTS](docs/QUALITY_IMPROVEMENTS.md)。Agent 工作流程、任务和验证规则分别位于 `AGENTS.md`、`docs/TASKS.md`、`docs/EVALS.md`；原始用户设想保留在 `USER_BRIEF.md`。
 
-- 给方向
-- 指出不能破坏的东西
-- 判断最终结果是否符合你的意图
-
-其余内容，包括任务拆解、验收标准、验证命令、文档更新和失败迭代，都交给 AI。
+2026-10-26 本轮改动提交至 GitHub，按用户要求未部署，线上版本保持原状。项目保留 OpenNext / Cloudflare Workers 配置，既有部署记录见 [TASKS](docs/TASKS.md)。

@@ -1,38 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import type { AdvisorJudgment } from '@/lib/types'
-
-// Re-implement for testing (same logic as route.ts)
-function extractPartialAdvisorJudgment(
-  text: string,
-  fallbackName: string
-): AdvisorJudgment | null {
-  const get = (key: string): string => {
-    const m = text.match(new RegExp(`"${key}"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)`))
-    if (!m) return ''
-    return m[1].replace(/\\n/g, '\n').replace(/\\"/g, '"').replace(/\\t/g, ' ')
-  }
-
-  const core = get('core_judgment')
-  if (!core) return null
-
-  const rawStance = get('stance')
-  const validStances = ['支持', '反对', '有条件支持', '需要更多信息'] as const
-  const stance = (validStances as readonly string[]).includes(rawStance)
-    ? rawStance as AdvisorJudgment['stance']
-    : '需要更多信息'
-
-  return {
-    advisor:       get('advisor') || fallbackName,
-    stance,
-    core_judgment: core,
-    reasoning:     get('reasoning') || '（输出被中断，无法获取完整推理）',
-    focus:         get('focus')     || '—',
-    criticism:     get('criticism') || '（未能完整生成）',
-    demand:        get('demand')    || '—',
-    approach:      get('approach')  || '—',
-    blind_spot:    get('blind_spot')|| '—',
-  }
-}
+import { extractPartialAdvisorJudgment } from '@/app/api/chat/shared'
 
 describe('extractPartialAdvisorJudgment', () => {
   it('extracts from complete JSON text', () => {
@@ -50,7 +17,7 @@ describe('extractPartialAdvisorJudgment', () => {
     expect(result).not.toBeNull()
     expect(result!.core_judgment).toBe('物理上可行')
     expect(result!.reasoning).toBe('从第一性原理')
-    expect(result!.criticism).toBe('（未能完整生成）')
+    expect(result!.criticism).toBe('')
   })
 
   it('returns null when no core_judgment', () => {
